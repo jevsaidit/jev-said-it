@@ -45,7 +45,7 @@ echo "3. project contracts, wired"
 SWAP=$(fc src/adapters/UniV4SwapAdapter.sol:UniV4SwapAdapter --constructor-args $UR $OWNER)
 send $SWAP 'setPool(address,uint24,int24,address)' $TOKEN 0 200 $HOOK --private-key $PK0 >/dev/null
 ROUTER=$(fc src/FeeRouter.sol:FeeRouter --constructor-args $TOKEN $OWNER $(cast wallet address $(k 5)) $(cast wallet address $(k 6)) $(cast wallet address $(k 7)) $KEEPER)
-DIST=$(fc src/RewardsDistributor.sol:RewardsDistributor --constructor-args $TOKEN $OWNER $SCORER $GUARD)
+DIST=$(fc src/RewardsDistributor.sol:RewardsDistributor --constructor-args $TOKEN $OWNER $SCORER $GUARD 0)  # genesis: no root is set in this test
 send $ROUTER 'setSwapAdapter(address)' $SWAP --private-key $PK0 >/dev/null
 send $ROUTER 'setRewardsDistributor(address)' $DIST --private-key $PK0 >/dev/null
 send $ADAPTER 'setRouter(address)' $ROUTER --private-key $PK0 >/dev/null

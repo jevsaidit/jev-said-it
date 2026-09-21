@@ -1159,3 +1159,52 @@ code,
     grid-column: 1 / -1;
   }
 }
+
+/* ---------- share pages ---------- */
+
+.share {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding-block: 48px;
+  background: var(--ink);
+}
+.share__wrap {
+  display: grid;
+  gap: 1.5rem;
+  justify-items: center;
+}
+.share__card {
+  width: 100%;
+  max-width: 900px;
+  height: auto;
+  aspect-ratio: 1200 / 630;
+  border: 1px solid var(--line);
+}
+.share__actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.play__share h3 {
+  font-family: var(--font-display);
+  font-size: var(--step-1);
+  margin: 0 0 0.5rem;
+}
+.play__share ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.play__share li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--felt-2);
+  font-family: var(--font-data);
+  font-size: 0.78rem;
+}

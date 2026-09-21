@@ -28,7 +28,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ path: string[]
       status: res.status,
       headers: {
         "content-type": res.headers.get("content-type") ?? "application/json",
-        "cache-control": "public, s-maxage=30, stale-while-revalidate=60",
+        // One wallet's view, or an error, must never sit in a shared cache and be served to someone else.
+        "cache-control": rel.startsWith("holder/") || !res.ok ? "no-store" : "public, s-maxage=30, stale-while-revalidate=60",
       },
     });
   } catch {

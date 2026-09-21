@@ -8,12 +8,10 @@ import { epochOf } from "../questions/epoch.js";
 import type { VerdictModel } from "../questions/model.js";
 import { LEDGER_ABI, openBatch } from "../questions/open.js";
 import { resolveDue } from "../resolve/resolve.js";
-import { closeEpoch } from "../score/epoch.js";
+import { closeEpoch, epochStartBlock } from "../score/epoch.js";
 import { calibration, claimFor, epochView, holderView, leaderboard, questionJson, treasuryOps } from "./feed.js";
-import { blockAtOrBefore } from "../chain/blocktime.js";
 import { getCursor } from "../db/db.js";
 import { transferCursor } from "../indexer/transfers.js";
-import { EPOCH_LENGTH } from "../questions/epoch.js";
 import { runTreasury, type TreasuryConfig } from "../treasury/treasury.js";
 import { announce } from "../announcer/announcer.js";
 import { makeSender } from "../announcer/channels.js";
@@ -149,10 +147,37 @@ export async function serve(d: ServiceDeps): Promise<void> {
     return { ok, lastSeenAgeSec: age, maxAgeSec: d.healthMaxAgeSec, indexLagBlocks: lag, model: d.model?.id ?? null, tasks };
   };
 
-  const send = (res: ServerResponse, code: number, body: string, type = "application/json") => {
+  const send = (res: ServerResponse & { cacheKey?: string }, code: number, body: string, type = "application/json") => {
+    if (res.cacheKey && code === 200) {
+      if (cached.size > 5000) cached.clear();
+      cached.set(res.cacheKey, { at: Date.now(), code, body });
+    }
     res.writeHead(code, { "content-type": type, "access-control-allow-origin": "*", "cache-control": "public, max-age=15" });
     res.end(body);
   };
+  // The public feed must not turn visitors into RPC calls: the RPC's rate limit is shared with the
+  // indexer, and a blind indexer makes the engine exit. Chain id and genesis never change; the head
+  // timestamp is reused for 5s; start blocks are cached per epoch; responses for 15s (= cache-control).
+  let meta: { chainId: number; genesis: number } | null = null;
+  const ledgerMeta = async () => {
+    if (!meta) {
+      meta = {
+        chainId: await ledger!.getChainId(),
+        genesis: Number(await ledger!.readContract({ address: d.lcfg!.callLedger, abi: LEDGER_ABI, functionName: "genesis" })),
+      };
+    }
+    return meta;
+  };
+  let head: { at: number; ts: number } | null = null;
+  const chainNow = async () => {
+    if (!head || Date.now() - head.at > 5000) head = { at: Date.now(), ts: Number((await ledger!.getBlock({ blockTag: "latest" })).timestamp) };
+    return head.ts;
+  };
+  const startBlocks = new Map<number, bigint>();
+  const cached = new Map<string, { at: number; code: number; body: string }>();
+  // 15s = the cache-control the feed already declares. FEED_CACHE_SEC=0 for tests that move fast.
+  const FEED_CACHE_MS = Number(process.env.FEED_CACHE_SEC ?? 15) * 1000;
+
   const route = async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method !== "GET") return send(res, 405, jsonOut({ error: "GET only" }));
     const path = new URL(req.url ?? "/", "http://x").pathname;
@@ -168,17 +193,16 @@ export async function serve(d: ServiceDeps): Promise<void> {
     }
     if (path === "/epochs/current") {
       if (!d.lcfg || !ledger) return send(res, 404, jsonOut({ error: "CallLedger not configured" }));
-      const genesis = Number(await ledger.readContract({ address: d.lcfg.callLedger, abi: LEDGER_ABI, functionName: "genesis" }));
-      const now = Number((await ledger.getBlock({ blockTag: "latest" })).timestamp);
+      const { genesis } = await ledgerMeta();
+      const now = await chainNow();
       const e = epochOf(now, genesis);
       return send(res, 200, jsonOut({ ...(await epochView(d.db, e, now)), genesis, now }));
     }
     if (path === "/config") {
       // What a wallet needs to play: the ledger's chain and the three addresses. Read from the
       // engine's own configuration, so the site cannot point at a different contract than the one scored.
-      const chainId = ledger ? await ledger.getChainId() : null;
       return send(res, 200, jsonOut({
-        chainId,
+        chainId: ledger ? (await ledgerMeta()).chainId : null,
         token: d.cfg.token,
         callLedger: d.lcfg?.callLedger ?? null,
         rewardsDistributor: d.rcfg?.rewardsDistributor ?? null,
@@ -186,10 +210,14 @@ export async function serve(d: ServiceDeps): Promise<void> {
     }
     if ((m = path.match(/^\/holder\/(0x[0-9a-fA-F]{40})$/))) {
       if (!d.lcfg || !ledger) return send(res, 404, jsonOut({ error: "CallLedger not configured" }));
-      const genesis = Number(await ledger.readContract({ address: d.lcfg.callLedger, abi: LEDGER_ABI, functionName: "genesis" }));
-      const now = Number((await ledger.getBlock({ blockTag: "latest" })).timestamp);
-      const epoch = epochOf(now, genesis);
-      const startBlock = await blockAtOrBefore(d.token, genesis + epoch * EPOCH_LENGTH);
+      const { genesis } = await ledgerMeta();
+      const epoch = epochOf(await chainNow(), genesis);
+      // The start block of an epoch never changes once found: one binary search per epoch, not per request.
+      if (!startBlocks.has(epoch)) {
+        const b = await epochStartBlock(d.token, genesis, epoch);
+        if (b !== null) startBlocks.set(epoch, b);
+      }
+      const startBlock = startBlocks.get(epoch) ?? null;
       const indexedBlock = await getCursor(d.db, transferCursor(d.cfg.token));
       return send(res, 200, jsonOut(await holderView(d.db, { token: d.cfg.token, account: m[1]!, epoch, startBlock, indexedBlock })));
     }
@@ -208,6 +236,11 @@ export async function serve(d: ServiceDeps): Promise<void> {
   };
 
   const server = createServer((req, res) => {
+    const path = new URL(req.url ?? "/", "http://x").pathname;
+    const cacheable = req.method === "GET" && /^\/(epochs\/current|holder\/0x[0-9a-fA-F]{40}|calibration)$/.test(path);
+    const hit = cacheable ? cached.get(path) : undefined;
+    if (hit && Date.now() - hit.at < FEED_CACHE_MS) return send(res, hit.code, hit.body);
+    if (cacheable) (res as ServerResponse & { cacheKey?: string }).cacheKey = path;
     route(req, res).catch((e) => send(res, 500, jsonOut({ error: (e as Error).message.split("\n")[0] })));
   });
   await new Promise<void>((r) => server.listen(d.port, d.host, r));

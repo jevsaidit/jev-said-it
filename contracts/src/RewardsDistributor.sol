@@ -25,6 +25,11 @@ contract RewardsDistributor is Ownable2Step {
     uint256 public constant CLAIM_DELAY = 12 hours;
 
     IERC20 public immutable token;
+    /// @notice Start of epoch 0: the same value as `CallLedger.genesis`. A root can only be set for an
+    ///         epoch that has already ENDED. Without this bound one transaction from the scorer key,
+    ///         `setEpochRoot(type(uint256).max, ...)`, pushes `lastEpoch` out of reach and every later
+    ///         root reverts with EpochNotIncreasing: the whole balance locked, with no path out.
+    uint256 public immutable genesis;
     address public scorer;
     address public guardian;
     uint16 public maxEpochBudgetBps = 2000;
@@ -66,15 +71,18 @@ contract RewardsDistributor is Ownable2Step {
     error VoidedEpoch();
     error VoidWindowClosed();
     error AlreadyVoided();
+    error EpochNotEnded();
+    error ClaimWindowClosed();
 
     /// @dev `guardian_` cannot be zero: after the handover the owner is a 24-hour timelock, and
     ///      an operation scheduled there cannot land inside the CLAIM_DELAY = 12 hour
     ///      window, so the guardian is in practice the only address that can void an epoch. A
     ///      zero guardian would be a distributor with no valve, and we would notice only on the
     ///      day it is needed. `scorer_` instead stays unrestricted: see the note on `setScorer`.
-    constructor(address token_, address owner_, address scorer_, address guardian_) Ownable(owner_) {
+    constructor(address token_, address owner_, address scorer_, address guardian_, uint256 genesis_) Ownable(owner_) {
         if (guardian_ == address(0)) revert ZeroAddress();
         token = IERC20(token_);
+        genesis = genesis_;
         scorer = scorer_;
         guardian = guardian_;
     }
@@ -92,6 +100,8 @@ contract RewardsDistributor is Ownable2Step {
         if (msg.sender != scorer) revert NotAuthorized();
         if (root == bytes32(0)) revert NoRoot();
         if (roots[epoch] != bytes32(0)) revert RootExists();
+        // Overflows (and so reverts) for absurd epochs: that is the point.
+        if (block.timestamp < genesis + (epoch + 1) * EPOCH_LENGTH) revert EpochNotEnded();
         if (hasPublished) {
             if (epoch <= lastEpoch) revert EpochNotIncreasing();
             if (block.timestamp < lastRootSetAt + EPOCH_LENGTH) revert EpochTooSoon();
@@ -112,6 +122,8 @@ contract RewardsDistributor is Ownable2Step {
         if (root == bytes32(0)) revert NoRoot();
         if (epochVoided[epoch]) revert VoidedEpoch();
         if (block.timestamp < epochSetAt[epoch] + CLAIM_DELAY) revert ClaimsNotOpen();
+        // Past the window the budget belongs to sweepExpired: a claim racing a sweep is not a rule.
+        if (block.timestamp >= epochSetAt[epoch] + CLAIM_WINDOW) revert ClaimWindowClosed();
         if (hasClaimed[epoch][msg.sender]) revert AlreadyClaimed();
         bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(msg.sender, amount))));
         if (!MerkleProof.verify(proof, root, leaf)) revert InvalidProof();

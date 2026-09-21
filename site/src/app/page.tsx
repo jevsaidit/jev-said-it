@@ -201,7 +201,7 @@ export default function Home() {
                 the receipt and watch the hash stop matching.
               </p>
               <p className="muted">Check any live question yourself, no trust in us needed:</p>
-              <code className="cmd">{`curl -s \\
+              <code className="cmd" tabIndex={0} aria-label="Command to verify a question's commitment">{`curl -s \\
   ${SITE_URL}/api/feed/q/<id>.json \\
   | tr -d '\\n' | cast keccak`}</code>
             </div>
@@ -273,7 +273,7 @@ skill = (b − y)² − brier`}</div>
                 exact integer math anyone can redo from the published receipts and events.
               </p>
             </div>
-            <div className="table-scroll">
+            <div className="table-scroll" tabIndex={0} role="region" aria-label="Test wallets and what each was paid">
               <table className="wallets">
                 <caption>Five test wallets, one rule each. A full epoch on a local chain, 21 Sep 2026.</caption>
                 <thead>
@@ -311,7 +311,7 @@ skill = (b − y)² − brier`}</div>
               </p>
               <p>
                 Winners are paid in {T}, never in ETH. Once per epoch, at a time derived from a secret
-                so nobody can front-run it, {(FEE_SPLIT.find((f) => f.key === "rewards")!.bps + FEE_SPLIT.find((f) => f.key === "burn")!.bps) / 100}% of the fees
+                so it is hard to front-run, {(FEE_SPLIT.find((f) => f.key === "rewards")!.bps + FEE_SPLIT.find((f) => f.key === "burn")!.bps) / 100}% of the fees
                 buy {T} on the open market. No wallet sits in between: the router buys and the
                 distributor holds.
               </p>

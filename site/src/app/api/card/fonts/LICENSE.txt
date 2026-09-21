@@ -1,0 +1,2 @@
+Pixelify Sans, Atkinson Hyperlegible Next and Martian Mono: SIL Open Font License 1.1
+(https://openfontlicense.org). Latin subset, variable weight, as served by Google Fonts on 2026-09-21.

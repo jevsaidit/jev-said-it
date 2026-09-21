@@ -1,7 +1,7 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { createPublicClient, createWalletClient, custom, type Address, type EIP1193Provider, type Hex } from "viem";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPublicClient, createWalletClient, custom, type Abi, type Address, type EIP1193Provider, type Hex } from "viem";
 import { CHAINS, DISTRIBUTOR_ABI, LEDGER_ABI } from "@/lib/chains";
 
 // The play panel. It decides nothing: the CallLedger accepts or refuses a call, the engine counts
@@ -23,7 +23,14 @@ type Tx = { kind: "idle" } | { kind: "wallet" } | { kind: "pending"; hash: Hex }
 
 const fmtTokens = (wei: string | bigint) => (BigInt(wei) / 10n ** 18n).toLocaleString("en-US");
 const hhmm = (ts: number) => new Date(ts * 1000).toISOString().slice(11, 16) + " UTC";
+const dayHhmm = (ts: number) => new Date(ts * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC";
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+// X's post composer with the text filled in. The link is a share page whose card X renders;
+// what the card prints comes from the engine, not from this text.
+const postUrl = (text: string, path: string) =>
+  `https://x.com/intent/post?${new URLSearchParams({ text, url: `${window.location.origin}${path}` }).toString()}`;
+type Shared = { kind: "call"; id: Hex; symbol: string; p: number; agree: boolean } | { kind: "win"; epoch: number; amount: string };
+
 const errMsg = (e: unknown) => {
   const x = e as { shortMessage?: string; message?: string };
   return (x.shortMessage ?? x.message ?? "The wallet returned an error.").split("\n")[0]!;
@@ -41,7 +48,8 @@ async function feed<T>(path: string): Promise<{ ok: true; data: T } | { ok: fals
 
 export function Play({ ticker }: { ticker: string }) {
   const T = `$${ticker}`;
-  const [cfg, setCfg] = useState<Config | null | "blind">(null);
+  // null = loading, "offline" = the site has no engine yet (pre-launch), "blind" = the engine did not answer
+  const [cfg, setCfg] = useState<Config | null | "blind" | "offline">(null);
   const [hasWallet, setHasWallet] = useState<boolean | null>(null);
   const [account, setAccount] = useState<Address | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
@@ -54,27 +62,42 @@ export function Play({ ticker }: { ticker: string }) {
   const [claims, setClaims] = useState<ClaimState[]>([]);
   const [picks, setPicks] = useState<Record<string, boolean>>({});
   const [tx, setTx] = useState<Tx>({ kind: "idle" });
+  const [shared, setShared] = useState<Shared[]>([]);
   const [tick, setTick] = useState(() => Math.floor(Date.now() / 1000));
   // The contract judges deadlines and claim windows by the chain's clock, not this computer's.
   const [skew, setSkew] = useState(0);
   const now = tick + skew;
 
-  const chain = cfg && cfg !== "blind" && cfg.chainId ? CHAINS[cfg.chainId] : undefined;
+  const live = cfg && cfg !== "blind" && cfg !== "offline" ? cfg : null;
+  const chain = live?.chainId ? CHAINS[live.chainId] : undefined;
   const onChain = chain !== undefined && chainId === chain.id;
 
   useEffect(() => {
     setHasWallet(typeof window !== "undefined" && !!window.ethereum);
-    feed<Config>("config").then((r) => setCfg(r.ok ? r.data : "blind"));
+    feed<Config>("config").then((r) => setCfg(r.ok ? r.data : r.status === 503 ? "offline" : "blind"));
     const t = setInterval(() => setTick(Math.floor(Date.now() / 1000)), 30_000);
     return () => clearInterval(t);
   }, []);
+
+  // A different wallet or network makes every pick, receipt and pending state meaningless.
+  const reset = () => {
+    setPicks({});
+    setShared([]);
+    setTx({ kind: "idle" });
+  };
 
   // Keep account and chain in step with the wallet, including changes made inside the wallet.
   useEffect(() => {
     const eth = window.ethereum;
     if (!eth) return;
-    const onAcc = (a: unknown) => setAccount(((a as string[])[0] as Address) ?? null);
-    const onChainChanged = (c: unknown) => setChainId(Number(c as string));
+    const onAcc = (a: unknown) => {
+      reset();
+      setAccount(((a as string[])[0] as Address) ?? null);
+    };
+    const onChainChanged = (c: unknown) => {
+      reset();
+      setChainId(Number(c as string));
+    };
     eth.request({ method: "eth_accounts" }).then((a) => onAcc(a)).catch(() => {});
     eth.request({ method: "eth_chainId" }).then((c) => onChainChanged(c)).catch(() => {});
     eth.on?.("accountsChanged", onAcc);
@@ -85,11 +108,16 @@ export function Play({ ticker }: { ticker: string }) {
     };
   }, []);
 
+  // Each refresh is numbered: a slow one for the previous account must not overwrite a newer one.
+  const seq = useRef(0);
   const refresh = useCallback(async () => {
-    if (!account || !onChain || !cfg || cfg === "blind" || !cfg.callLedger || !window.ethereum) return;
+    const cfg = live;
+    if (!account || !onChain || !cfg || !cfg.callLedger || !window.ethereum) return;
+    const my = ++seq.current;
     const pub = createPublicClient({ chain, transport: custom(window.ethereum) });
     const [h, e] = await Promise.all([feed<Holder>(`holder/${account}`), feed<{ questions?: Question[] }>("epochs/current")]);
     const head = await pub.getBlock({ blockTag: "latest" });
+    if (my !== seq.current) return;
     setSkew(Number(head.timestamp) - Math.floor(Date.now() / 1000));
     setTick(Math.floor(Date.now() / 1000));
     const ep = await pub.readContract({ address: cfg.callLedger, abi: LEDGER_ABI, functionName: "currentEpoch" });
@@ -107,14 +135,14 @@ export function Play({ ticker }: { ticker: string }) {
       pub.readContract({ address: cfg.callLedger, abi: LEDGER_ABI, functionName: "capacity", args: [account] }),
       ...open.map((q) => pub.readContract({ address: cfg.callLedger!, abi: LEDGER_ABI, functionName: "answered", args: [ep, account, q.id] })),
     ]);
+    if (my !== seq.current) return;
     setUsed(u);
     setCapNow(c);
     setAnswered(Object.fromEntries(open.map((q, i) => [q.id, ans[i] as boolean])));
     if (h.ok && cfg.rewardsDistributor && h.data.claims.length > 0) {
       const d = cfg.rewardsDistributor;
       const delay = await pub.readContract({ address: d, abi: DISTRIBUTOR_ABI, functionName: "CLAIM_DELAY" });
-      setClaims(
-        await Promise.all(
+      const cs = await Promise.all(
           h.data.claims.map(async (cl) => {
             const ep2 = BigInt(cl.epoch);
             const [claimed, voided, setAt] = await Promise.all([
@@ -124,13 +152,18 @@ export function Play({ ticker }: { ticker: string }) {
             ]);
             return { ...cl, claimed, voided, opensAt: Number(setAt + delay) };
           }),
-        ),
-      );
+        );
+      if (my === seq.current) setClaims(cs);
     } else setClaims([]);
-  }, [account, onChain, cfg, chain]);
+  }, [account, onChain, live, chain]);
 
+  // Batches open every couple of hours and rewards appear after each epoch: keep looking, while visible.
   useEffect(() => {
     refresh().catch(() => {});
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") refresh().catch(() => {});
+    }, 60_000);
+    return () => clearInterval(t);
   }, [refresh]);
 
   const connect = async () => {
@@ -148,7 +181,9 @@ export function Play({ ticker }: { ticker: string }) {
     const hex = `0x${chain.id.toString(16)}`;
     try {
       await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
-    } catch {
+    } catch (e) {
+      // Only an unknown chain (4902) is added; a refusal is a refusal, not a second prompt.
+      if ((e as { code?: number }).code !== 4902) return setTx({ kind: "error", msg: errMsg(e) });
       try {
         await window.ethereum.request({
           method: "wallet_addEthereumChain",
@@ -166,16 +201,22 @@ export function Play({ ticker }: { ticker: string }) {
     }
   };
 
-  const send = async (fn: (w: ReturnType<typeof createWalletClient>) => Promise<Hex>) => {
+  type Req = { address: Address; abi: Abi; functionName: string; args: readonly unknown[] };
+  const send = async (req: Req, onDone?: () => void) => {
     if (!window.ethereum || !account || !chain) return;
     const wallet = createWalletClient({ account, chain, transport: custom(window.ethereum) });
     const pub = createPublicClient({ chain, transport: custom(window.ethereum) });
     try {
       setTx({ kind: "wallet" });
-      const hash = await fn(wallet);
+      // Ask the chain first: a call that would revert (sold since the page loaded, deadline passed,
+      // claims not open yet) is refused here, with the contract's reason, before any gas is spent.
+      const { request } = await pub.simulateContract({ ...req, account } as never);
+      const hash = await wallet.writeContract(request);
       setTx({ kind: "pending", hash });
-      const r = await pub.waitForTransactionReceipt({ hash });
+      const r = await pub.waitForTransactionReceipt({ hash, timeout: 120_000 }).catch(() => null);
+      if (!r) return setTx({ kind: "error", msg: "Not mined after 2 minutes. Check the transaction before sending again.", hash });
       setTx(r.status === "success" ? { kind: "done", hash } : { kind: "error", msg: "The transaction reverted on-chain.", hash });
+      if (r.status === "success") onDone?.();
       setPicks({});
       await refresh();
     } catch (e) {
@@ -187,37 +228,31 @@ export function Play({ ticker }: { ticker: string }) {
   // What will actually be scored: the contract enforces the balance now, the engine the balance at start.
   const counted = capNow === null ? null : capStart === null ? capNow : capStart < capNow ? capStart : capNow;
   const left = counted !== null && used !== null ? (counted > used ? counted - used : 0n) : null;
-  const chosen = Object.keys(picks).length;
-  const openQs = useMemo(() => questions.filter((q) => (q.deadline ?? 0) > now), [questions, now]);
+  // Hide a question a minute before it closes: a call sent in its last seconds may land after the deadline.
+  const openQs = useMemo(() => questions.filter((q) => (q.deadline ?? 0) > now + 60), [questions, now]);
+  // What gets sent is derived from what is still on screen: a pick on a question that has since closed,
+  // or that this account already answered, would revert.
+  const toSend = openQs.filter((q) => picks[q.id] !== undefined && !answered[q.id]);
+  const chosen = toSend.length;
   const explorer = chain?.blockExplorers?.default.url;
 
-  const submit = () =>
-    send((w) =>
-      w.writeContract({
-        address: (cfg as Config).callLedger!,
-        abi: LEDGER_ABI,
-        functionName: "submit",
-        args: [Object.keys(picks) as Hex[], Object.values(picks)],
-        account: account!,
-        chain,
-      }),
+  const submit = () => {
+    const snapshot: Shared[] = toSend.map((q) => ({ kind: "call", id: q.id, symbol: q.symbol ? `$${q.symbol}` : short(q.token ?? q.id), p: Number(q.p ?? 0), agree: picks[q.id]! }));
+    return send(
+      { address: live!.callLedger!, abi: LEDGER_ABI, functionName: "submit", args: [toSend.map((q) => q.id), toSend.map((q) => picks[q.id]!)] },
+      () => setShared(snapshot),
     );
+  };
   const claim = (c: ClaimState) =>
-    send((w) =>
-      w.writeContract({
-        address: (cfg as Config).rewardsDistributor!,
-        abi: DISTRIBUTOR_ABI,
-        functionName: "claim",
-        args: [BigInt(c.epoch), BigInt(c.amount), c.proof],
-        account: account!,
-        chain,
-      }),
+    send(
+      { address: live!.rewardsDistributor!, abi: DISTRIBUTOR_ABI, functionName: "claim", args: [BigInt(c.epoch), BigInt(c.amount), c.proof] },
+      () => setShared([{ kind: "win", epoch: c.epoch, amount: c.amount }]),
     );
 
   let body: ReactNode;
   if (cfg === null) body = <p className="play__note">Reading the engine.</p>;
   else if (cfg === "blind") body = <p className="play__note">The engine didn&apos;t answer, so there is nothing to sign right now. Try again in a minute.</p>;
-  else if (!cfg.callLedger || !chain)
+  else if (cfg === "offline" || !cfg.callLedger || !chain)
     body = <p className="play__note">Calls open at launch, when the CallLedger is deployed. Its address will be printed here.</p>;
   else if (hasWallet === false)
     body = <p className="play__note">No browser wallet found. Install Rabby or MetaMask, then reload this page.</p>;
@@ -325,7 +360,7 @@ export function Play({ ticker }: { ticker: string }) {
                   ) : c.voided ? (
                     <span className="play__note--warn">voided by the guardian</span>
                   ) : now < c.opensAt ? (
-                    <span>claims open {hhmm(c.opensAt)}</span>
+                    <span>claims open {dayHhmm(c.opensAt)}</span>
                   ) : (
                     <button className="btn btn--ghost" type="button" onClick={() => claim(c)} disabled={tx.kind === "wallet" || tx.kind === "pending"}>
                       Claim
@@ -339,11 +374,48 @@ export function Play({ ticker }: { ticker: string }) {
       </>
     );
 
+  const share = shared.length > 0 && (
+    <div className="play__share">
+      <h3>{shared[0]!.kind === "win" ? "Post the receipt" : "Post your calls"}</h3>
+      <ul>
+        {shared.map((x) => {
+          if (x.kind === "win") {
+            const text = `I beat Jev: +${fmtTokens(x.amount)} ${T} in epoch ${x.epoch}. @jevsaidit #jevsaidit`;
+            return (
+              <li key={`w${x.epoch}`}>
+                <span>
+                  Epoch {x.epoch}: +{fmtTokens(x.amount)} {T}
+                </span>
+                <a className="btn" href={postUrl(text, `/w/${x.epoch}/${account}`)} target="_blank" rel="noopener">
+                  Post on X
+                </a>
+              </li>
+            );
+          }
+          const up = x.p >= 0.5;
+          const mine = x.agree === up ? "up" : "down";
+          const text = `Jev said ${Math.round((up ? x.p : 1 - x.p) * 100)}% ${up ? "up" : "down"} on ${x.symbol}. I said ${mine}. @jevsaidit #jevsaidit`;
+          return (
+            <li key={x.id}>
+              <span>
+                {x.symbol}: you said {mine}
+              </span>
+              <a className="btn btn--ghost" href={postUrl(text, `/c/${x.id}/${x.agree ? "agree" : "disagree"}`)} target="_blank" rel="noopener">
+                Post on X
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+
   return (
-    <div className="play" aria-live="polite">
+    <div className="play">
       {body}
+      {share}
       {tx.kind !== "idle" && (
-        <p className={`play__tx${tx.kind === "error" ? " play__note--warn" : ""}`} data-tx={"hash" in tx ? tx.hash : undefined}>
+        <p className={`play__tx${tx.kind === "error" ? " play__note--warn" : ""}`} data-tx={"hash" in tx ? tx.hash : undefined} aria-live="polite">
           {tx.kind === "wallet" && "Confirm in your wallet."}
           {tx.kind === "pending" && "Sent. Waiting for the block."}
           {tx.kind === "done" && "Confirmed on-chain."}

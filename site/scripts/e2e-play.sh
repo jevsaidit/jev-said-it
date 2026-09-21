@@ -40,15 +40,15 @@ TOK=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast 
 send $TOK 'mint(address,uint256)' $U1 100000$E18 --private-key $PK0
 warp 5; GEN=$(now)
 LED=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast src/CallLedger.sol:CallLedger --constructor-args $TOK $DEP $DEP $GEN | awk '/Deployed to/{print $3}')
-DIST=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast src/RewardsDistributor.sol:RewardsDistributor --constructor-args $TOK $DEP $SCORER $GUARD | awk '/Deployed to/{print $3}')
+DIST=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast src/RewardsDistributor.sol:RewardsDistributor --constructor-args $TOK $DEP $SCORER $GUARD $GEN | awk '/Deployed to/{print $3}')
 send $TOK 'mint(address,uint256)' $DIST 1000000$E18 --private-key $PK0
 warp 5
 send $TOK 'mint(address,uint256)' $U2 50000$E18 --private-key $PK0   # after the epoch started
 
 export RPC_URL=$A LEDGER_RPC_URL=$A TOKEN=$TOK LAUNCH_BLOCK=0 V4_START_BLOCK=0 CONFIRMATIONS=0 \
   CALL_LEDGER=$LED KEEPER_PK=$PK0 REWARDS_DISTRIBUTOR=$DIST SCORER_PK=$PKS LEDGER_START_BLOCK=0 \
-  EXCLUDE="$DIST,$LED" TOP_FRACTION=1 MODEL=stub STUB_P=0.7 QUESTIONS_PER_BATCH=3 MIN_SWAPS_LAST_HOUR=1 \
-  CALL_WINDOW_SEC=21600 POLL_MS=1000 HEALTH_MAX_AGE_SEC=30 PORT=$SP
+  EXCLUDE="$DIST,$LED" TOP_FRACTION=1 MODEL=stub STUB_P=0.7 QUESTIONS_PER_BATCH=3 MIN_SWAPS_LAST_HOUR=1 MIN_SWAPS_LAST_6H=1 \
+  CALL_WINDOW_SEC=21600 FEED_CACHE_SEC=0 POLL_MS=1000 HEALTH_MAX_AGE_SEC=30 PORT=$SP
 node --import tsx src/cli/main.ts migrate >/dev/null
 B=$(cast block-number --rpc-url $A)
 for i in 1 2 3; do
@@ -59,7 +59,8 @@ node --import tsx src/cli/main.ts serve > $LOG/serve.log 2>&1 & SERVE=$!
 until_ '[ "$(get /epochs/current | jq ".questions|length")" = 3 ]'
 
 cd $SITE
-[ -d .next ] || pnpm build >/dev/null
+# A production build that knows the local chain (31337); real builds never do.
+rm -rf .next && NEXT_PUBLIC_ALLOW_ANVIL=1 pnpm build >/dev/null
 # The feed proxy caches for 30s on disk: a previous run's questions must not leak into this one.
 rm -rf .next/cache/fetch-cache
 ENGINE_FEED_URL=$S node_modules/.bin/next start -p $WP -H 127.0.0.1 > $LOG/site.log 2>&1 & WEB=$!
@@ -88,6 +89,15 @@ if [ "$(cast call $LED 'callsUsed(uint256,address)(uint256)' 0 $U1 --rpc-url $A)
 fi
 has "$(echo "$R" | jq -r .after)" "7 of 10" "the panel updates to 7 calls left"
 has "$(echo "$R" | jq -r .after)" "answered" "answered questions are marked"
+echo "   share: the receipt of each call"
+check "$(echo "$R" | jq -r '.share | length')" 3 "one 'Post on X' per call"
+SH=$(echo "$R" | jq -r '.share[0]'); URL=$(node -e "console.log(new URL(process.argv[1]).searchParams.get('url'))" "$SH")
+has "$SH" "x.com/intent/post" "the button opens X's composer"
+has "$(node -e "console.log(new URL(process.argv[1]).searchParams.get('text'))" "$SH")" "@jevsaidit #jevsaidit" "the post tags @jevsaidit and #jevsaidit"
+P=$(echo "$URL" | sed "s|^https\?://[^/]*||")
+has "$(curl -s $W$P)" 'twitter:card" content="summary_large_image' "the share page declares a large card"
+IMG=$(curl -s $W$P | grep -oE 'og:image" content="[^"]+' | head -1 | sed 's/.*content="//')
+check "$(curl -s -o $LOG/call.png -w '%{http_code} %{content_type}' "$W$(echo $IMG | sed "s|^https\?://[^/]*||")")" "200 image/png" "the call card renders"
 [ "$(echo "$R" | jq -r '.error // empty')" ] && echo "   error: $(echo "$R" | jq -r .error) | $(echo "$R" | jq -r .panel)"
 
 echo "2. U2 bought after the epoch started: the panel does not let it waste gas on dropped calls"
@@ -109,6 +119,10 @@ R=$(browse $U1 claim u1-claim)
 has "$(echo "$R" | jq -r .tx)" "Confirmed on-chain" "the claim transaction is confirmed"
 check "$(cast call $DIST 'hasClaimed(uint256,address)(bool)' 0 $U1 --rpc-url $A)" true "on-chain: U1 has claimed epoch 0"
 has "$(echo "$R" | jq -r .after)" "claimed" "the panel marks the reward as claimed"
+echo "   share: the receipt of the win, and a forged one"
+has "$(echo "$R" | jq -r '.share[0]')" "%2Fw%2F0%2F" "a 'Post on X' for the win"
+check "$(curl -s -o $LOG/win.png -w '%{http_code} %{content_type}' $W/api/card/win/0/$U1)" "200 image/png" "the win card renders from the published epoch"
+check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/card/win/0/$U2) $(curl -s -o /dev/null -w '%{http_code}' $W/w/0/$U2)" "404 404" "no card and no page for a reward that was not published"
 [ "$(echo "$R" | jq -r '.error // empty')" ] && echo "   error: $(echo "$R" | jq -r .error) | $(echo "$R" | jq -r .panel)"
 
 echo; echo "$ok passed, $ko failed"

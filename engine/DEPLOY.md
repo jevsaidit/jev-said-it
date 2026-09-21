@@ -21,13 +21,13 @@ database: it can be redeployed or restarted at any time without losing anything.
 | `LAUNCH_BLOCK` | launch block (runbook §4.4) | balances start from here |
 | `V4_START_BLOCK` | `LAUNCH_BLOCK - 1700000` | about 48h earlier: candidates need history |
 | `CALL_LEDGER` | CallLedger address | without it, the engine only indexes |
-| `LEDGER_START_BLOCK` | CallLedger deploy block | |
+| `LEDGER_START_BLOCK` | CallLedger deploy block | **required** with `REWARDS_DISTRIBUTOR`: 0 would scan the ledger from genesis |
 | `KEEPER_PK` | key of the CallLedger publisher | **only here**, never in the repo |
-| `REWARDS_DISTRIBUTOR` | address | without it, no rewards |
+| `REWARDS_DISTRIBUTOR` | address | without it, no rewards. Set it after checking the first root by hand (runbook §5.0 step 3) |
 | `SCORER_PK` | scorer key | **distinct** from `KEEPER_PK` |
 | `EXCLUDE` | `TEAM_WALLET`, team wallets, FeeRouter, RewardsDistributor, pools, `0x…dEaD`, comma-separated | runbook §5.4 |
 | `PONS_ESCROW_ADAPTER` | the adapter that the launch names as fee recipient | check word 3 of `getLaunchedToken` right after launch (runbook §4.5) |
-| `FEE_ROUTER` | router address | with it, the engine collects the escrow and runs one buyback per epoch (the keeper must be the router's `keeper`) |
+| `FEE_ROUTER` | router address | with it, the engine collects the escrow and runs one buyback per epoch (the keeper must be the router's `keeper`). **Set it only after the timelock's `executeBatch`** (runbook §5.0 step 4) |
 | `MODEL` | `jev` | `none` = the engine indexes and resolves but opens no questions. `stub` is refused on mainnet |
 | `TYPESAFE_API_KEY` | TypeSafe key (console.typesafe.ai) | **only here**. With a wrong key the engine opens nothing and ends `FAILED` with the 401 in the message |
 | `JEV_MODEL` | `jev-1.13.0` | pinned version: the committed JSON gets the one that actually answered |

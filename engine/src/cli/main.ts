@@ -268,7 +268,8 @@ main()
     process.exit(code);
   })
   .catch(async (e) => {
-    console.error(e);
+    // First line only: a full viem error embeds the request URL, and an RPC URL may carry a key.
+    console.error(JSON.stringify({ fatal: (e as Error).message?.split("\n")[0] ?? String(e) }));
     await db.end();
     process.exit(EXIT_BLIND);
   });

@@ -29,7 +29,11 @@ export const anvil = defineChain({
   testnet: true,
 });
 
-export const CHAINS: Record<number, Chain> = { 4663: robinhood, 46630: robinhoodTestnet, 31337: anvil };
+// Anvil only outside production builds: a real visitor must never be asked to "Switch to Anvil".
+export const CHAINS: Record<number, Chain> =
+  process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_ALLOW_ANVIL !== "1"
+    ? { 4663: robinhood, 46630: robinhoodTestnet }
+    : { 4663: robinhood, 46630: robinhoodTestnet, 31337: anvil };
 
 export const LEDGER_ABI = [
   { type: "function", name: "submit", stateMutability: "nonpayable", inputs: [{ name: "ids", type: "bytes32[]" }, { name: "agree", type: "bool[]" }], outputs: [] },

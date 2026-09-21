@@ -38,13 +38,13 @@ for u in $U1 $U3 $U5; do send $TOK 'mint(address,uint256)' $u 100000$E18 --priva
 send $TOK 'mint(address,uint256)' $U2 30000$E18 --private-key $PK0
 warp 5; GEN=$(now)
 LED=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast src/CallLedger.sol:CallLedger --constructor-args $TOK $DEP $DEP $GEN | awk '/Deployed to/{print $3}')
-DIST=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast src/RewardsDistributor.sol:RewardsDistributor --constructor-args $TOK $DEP $SCORER $GUARD | awk '/Deployed to/{print $3}')
+DIST=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast src/RewardsDistributor.sol:RewardsDistributor --constructor-args $TOK $DEP $SCORER $GUARD $GEN | awk '/Deployed to/{print $3}')
 send $TOK 'mint(address,uint256)' $DIST 1000000$E18 --private-key $PK0
 warp 5; send $TOK 'mint(address,uint256)' $U4 100000$E18 --private-key $PK0   # the flash-buyer arrives after the start
 
 export RPC_URL=$A LEDGER_RPC_URL=$A TOKEN=$TOK LAUNCH_BLOCK=0 V4_START_BLOCK=0 CONFIRMATIONS=0 \
   CALL_LEDGER=$LED KEEPER_PK=$PK0 REWARDS_DISTRIBUTOR=$DIST SCORER_PK=$PKS LEDGER_START_BLOCK=0 \
-  EXCLUDE="$U5,$DIST,$LED" TOP_FRACTION=1 STUB_P=0.7 QUESTIONS_PER_BATCH=5 MIN_SWAPS_LAST_HOUR=1
+  EXCLUDE="$U5,$DIST,$LED" TOP_FRACTION=1 STUB_P=0.7 QUESTIONS_PER_BATCH=5 MIN_SWAPS_LAST_HOUR=1 MIN_SWAPS_LAST_6H=1
 cli migrate
 
 echo "1. five pools with a price, and the questions"

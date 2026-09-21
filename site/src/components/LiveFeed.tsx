@@ -76,7 +76,7 @@ export function LiveFeed({ ticker }: { ticker: string }) {
         <div className="feed__empty">
           <h3>No epoch yet.</h3>
           <p>
-            ${ticker} hasn&apos;t launched. The first batch of questions opens within 10 minutes of
+            ${ticker} hasn&apos;t launched. The first batch of questions opens shortly after
             launch, and shows up here with each question&apos;s probability and receipt.
           </p>
         </div>

@@ -1,7 +1,7 @@
-# Launch runbook — Jev Said It ($JEVSAID) on Pons v2
+# Launch runbook — Jev Said It ($JEVSAIDIT) on Pons v2
 
 Chain: **Robinhood Chain, id 4663**. Testnet: **46630**.
-Identity: name **Jev Said It**, ticker **$JEVSAID**, domain **jevsaidit.com**
+Identity: name **Jev Said It**, ticker **$JEVSAIDIT**, domain **jevsaidit.com**
 (defensive **jevsaidit.fun**, **jevsaidit.xyz**), X handle **@jevsaidit**, engine **@jevsaidit_bot**.
 
 This document is read on launch day, with real money at stake. Every step has:
@@ -36,7 +36,7 @@ this is only an operational reminder**.
 | `hookFeeBps` | `100` (1%) | `hook.hookFeeBps()` |
 | `CREATOR_FEE_RECIPIENT_TIMELOCK` | `259200` (3 days) | `factory.CREATOR_FEE_RECIPIENT_TIMELOCK()` |
 | `CREATOR_FEE_RECIPIENT_EXECUTION_WINDOW` | `259200` (3 days) | `factory.CREATOR_FEE_RECIPIENT_EXECUTION_WINDOW()` |
-| PoolKey | `currency0=0x0` (ETH), `currency1=$JEVSAID`, `fee=0`, `tickSpacing=200`, `hooks=memeHook` | `addresses.md` |
+| PoolKey | `currency0=0x0` (ETH), `currency1=$JEVSAIDIT`, `fee=0`, `tickSpacing=200`, `hooks=memeHook` | `addresses.md` |
 
 Reread them before launch (30 seconds, and it tells you whether Pons has changed anything):
 
@@ -147,12 +147,15 @@ Operating rules for whoever computes `minOut` for `FeeRouter.processSwap(minOut)
 2. Sizing:
    `minOut = quote_gross * (1 - haircut) * (1 - slippage_tolerance)`
    with `haircut = 0.01` as long as the creator tax stays zero.
-3. **Where `quote_gross` comes from.** The $JEVSAID pool does not exist until the token graduates, so
+3. **Where `quote_gross` comes from.** *(The engine does this itself since 21/09: `engine/src/treasury/quote.ts`
+   computes the exact in-range output from the pool's `slot0` and `liquidity` — checked against 10,398
+   real buys — and re-reads the hook fee and creator tax on-chain every pass. QuoterV4 below is not
+   implemented. The rest of this point is kept as the reasoning.)* The $JEVSAIDIT pool does not exist until the token graduates, so
    the quote cannot be precomputed today. In steady state, in order of preference:
    - v4-periphery's `QuoterV4` / `quoteExactInputSingle` on the §0 PoolKey, in `eth_call` at the
      same block the transaction starts from — it is the quote the hook has not yet taxed,
      so it is already the **gross** the formula needs;
-   - failing that, the PoolManager's `slot0` for the $JEVSAID PoolId and a price derived from the tick,
+   - failing that, the PoolManager's `slot0` for the $JEVSAIDIT PoolId and a price derived from the tick,
      remembering that it ignores the order's price impact;
    - **never** a price taken from an aggregator or from Dexscreener: that one is already net of the hook's
      cut, and applying `(1 - haircut)` to it again discounts twice.
@@ -160,14 +163,14 @@ Operating rules for whoever computes `minOut` for `FeeRouter.processSwap(minOut)
    discounting 1% after a tax increase makes every `processSwap` revert (and the swap bucket
    stays stuck until someone notices).
 5. The real value of our pool is reread from the two legs of the `HookFeeCollected` event of
-   a swap on $JEVSAID, or from the word at index 8 of `factory.getLaunchedToken($JEVSAID)`.
+   a swap on $JEVSAIDIT, or from the word at index 8 of `factory.getLaunchedToken($JEVSAIDIT)`.
    After launch this check is step 4.5.
 
 ### 1.3 The team receives no supply: it is paid from the fees
 
 The team **receives no share of the supply**. No reserved allocation, no purchase
 on the curve, no vesting — because there is nothing to vest. At launch the team wallets
-hold **zero $JEVSAID**, and they keep holding zero.
+hold **zero $JEVSAIDIT**, and they keep holding zero.
 
 The compensation is a **recurring share of the trading fees**: `teamBps = 2000`, i.e. **20%
 of the ETH** that enters the `FeeRouter`, accumulated in the `teamBalance` bucket and withdrawable **only** by the
@@ -205,10 +208,10 @@ that cannot be recovered: that is why the two checks that can say "no" are due a
 (expected addresses, §2.2) and **T-2** (guardian, §2.3), i.e. before the announcement and not at T-1h.
 
 - [ ] `cd contracts && forge test` green. What matters is **`0 failed`**: on 2026-09-20 the suite
-      gave **59 passed, 1 skipped**, but the total grows as tests are added, so a
+      gave **59 passed, 1 skipped**, on 2026-09-21 after the review fixes **80 passed, 2 skipped**; the total grows as tests are added, so a
       higher number is not a problem — a `failed`, even a single one, stops the launch.
       The skipped one is the fork test, which skips itself without `--fork-url`.
-- [ ] `forge test --match-path 'test/fork/*' --fork-url robinhood` green: **1 passed**. This is
+- [ ] `forge test --match-path 'test/fork/*' --fork-url robinhood` green: **2 passed** (FeePipeline + UniV4SwapAdapter). This is
       the only test that exercises the real swap — if it is red, the `processSwap` path is not
       proven and the launch stops.
 - [ ] `docs/addresses.md` reread today, with the §0 constants re-verified.
@@ -229,6 +232,10 @@ that cannot be recovered: that is why the two checks that can say "no" are due a
       changed several times: it must be looked up, not remembered.
 - [ ] The four fields of §2.4 are filled in, or it is written down that they arrive empty and
       who takes on the consequence.
+- [ ] Gas also on the four operating keys, or the product stops on its own (review of 21/09):
+      `TIMELOCK_PROPOSER` (`setRouter` §4.6.3, `scheduleBatch` §4.7), `KEEPER` (`openQuestions` every
+      ~2h, `claim()`, `processSwap`: without it the first epoch never opens), `SCORER` (`setEpochRoot`
+      4 times a day), `GUARDIAN` (`voidEpoch`, rare but it must never be the reason it cannot act).
 - [ ] ETH on **two different wallets** (§2.1), loaded before T-4:
       - **deploy key**: only the gas of the two scripts (estimate from the dry run: ~0.59M gas phase 1,
         ~8.4M gas phase 2). Nothing else, ever — see the box in §2.2.
@@ -243,7 +250,7 @@ that cannot be recovered: that is why the two checks that can say "no" are due a
 | `COMPUTE_WALLET` | compute treasury | withdraws the compute bucket (5%) with `withdrawCompute()` (§6.4) |
 | `OPS_WALLET` | ops treasury | withdraws the ops bucket (10%) with `withdrawOps()` (§6.4) |
 | `TEAM_WALLET` | team compensation | withdraws the team bucket (20%) with `withdrawTeam()` (§6.4). **Holds no supply** (§1.3) |
-| `KEEPER` | engine key | `processSwap(minOut)` on the router, `openQuestions` on the ledger. **It is the same key as the `CallLedger` `publisher`**: `DeployCore` passes `KEEPER` to both roles, so rotating one means rotating the other. After the handover they can be separated with `setPublisher` — worth doing, because the publisher is necessarily hot (every 6 hours) while the keeper chooses `minOut` over the whole swap bucket |
+| `KEEPER` | engine key | `processSwap(minOut)` on the router, `openQuestions` on the ledger. **It is the same key as the `CallLedger` `publisher`**: `DeployCore` passes `KEEPER` to both roles, so rotating one means rotating the other. They could be separated with `setPublisher`, **but the engine signs both with one `KEEPER_PK` today**: separating them on-chain breaks one of the two jobs until the engine takes two keys. The contract refuses `processSwap(0)` since 21/09 |
 | `SCORER` | engine key | `setEpochRoot` on the distributor |
 | `GUARDIAN` | key separate from the scorer, held by a designated person | **only** voids an epoch within `CLAIM_DELAY`. It can never move or receive funds (§7). **Empty or `0x0` makes `DeployCore` revert**: the `RewardsDistributor` constructor rejects a zero guardian, and the revert would arrive at T+5 min with the pool already live (§2.3) |
 
@@ -384,7 +391,7 @@ team buys nothing.
 **and** the good UniversalRouter `0x8876789976dEcBfCbBbe364623C63652db8C0904` are there, at the same
 addresses as mainnet, but **PonsV2LaunchFactory and PonsV2FeeEscrow do NOT exist on testnet**
 (`cast code` returns `0x`). So on testnet a real token **cannot** be launched on Pons, and
-without a factory there is no $JEVSAID pool to try a real swap on. The dress rehearsal uses
+without a factory there is no $JEVSAIDIT pool to try a real swap on. The dress rehearsal uses
 the mocks; the swap path is verified only on the mainnet fork (fork test, §2).
 
 > Correction of 2026-09-20: the previous version said the UniversalRouter was also missing on
@@ -714,12 +721,20 @@ by hand from the Blockscout UI.
 > **New shell?** §4 covers from T-24h to T+24h: more than one session, by construction.
 > Before any command of this step, rerun the **§4 preamble**.
 
-> **This is the only step of the runbook that has not been tested, not even in simulation.**
-> The factory ABI is not readable (Blockscout answers 403 behind Cloudflare) and on testnet
-> Pons does not exist, so the fields below are described by meaning and not by selector, and
-> nobody has ever filled them in on this factory. Read twice before confirming.
-> (The "decoy launch" field of §2.4 exists precisely to remove this sentence from the document: if it
-> was done, this step has already been run once on a throwaway token.)
+> **Tested on a mainnet fork on 2026-09-21** (`contracts/scripts/rehearse-launch-fork.sh`, §4.5 gate
+> green on rows 1, 3, 4, 5, 8, 9). The direct call below is the one that ran; it is the primary path.
+> A launch through the Pons UI is equivalent only if it fills the same fields.
+>
+> ```bash
+> SIG='launchToken((string,string,string,string,(string,string,string,string,string),address,uint16,bool,bytes32,bytes32),uint256,address)'
+> FEE=$(cast call $FACTORY 'launchFee()(uint256)' --rpc-url $RPC | awk '{print $1}')   # cast prints "500000000000000 [5e14]": the suffix is expected
+> need FEE && cast send $FACTORY "$SIG" \
+>   "(\"Jev Said It\",\"JEVSAIDIT\",\"<image url>\",\"<description>\",(\"\",\"\",\"\",\"\",\"\"),$PONS_ESCROW_ADAPTER,0,false,0x0000000000000000000000000000000000000000000000000000000000000000,$(cast keccak jevsaidit-launch))" \
+>   0 0x0000000000000000000000000000000000000000 --value $FEE --rpc-url $RPC --private-key <LAUNCH_EOA_KEY>
+> ```
+> Fields in order: name, symbol, image, description, five socials, **creator fee recipient = the
+> adapter**, **creator tax = 0**, **holder sharing = false**, extra, salt; then initial buy 0 and
+> **pair = 0x0 (native ETH)**.
 
 From the **launch EOA** (§2.1) — **not** from the deploy key, which must sign nothing else
 (§2.2) — on the factory
@@ -1163,8 +1178,9 @@ ARGS=$(cast abi-encode 'c(address,address,address,address,address,address)' \
 need ARGS && forge verify-contract $FEE_ROUTER src/FeeRouter.sol:FeeRouter \
   --chain 4663 --verifier blockscout --verifier-url $BS --constructor-args "$ARGS"
 
-ARGS=$(cast abi-encode 'c(address,address,address,address)' \
-      $JEVSAID_TOKEN $DEPLOYER $SCORER $GUARDIAN)
+# 5 arguments since 21/09: the last one is the genesis, the SAME value as the CallLedger's (§4.6.1)
+ARGS=$(cast abi-encode 'c(address,address,address,address,uint256)' \
+      $JEVSAID_TOKEN $DEPLOYER $SCORER $GUARDIAN $CALL_LEDGER_GENESIS)
 need ARGS && forge verify-contract $REWARDS_DISTRIBUTOR \
   src/RewardsDistributor.sol:RewardsDistributor \
   --chain 4663 --verifier blockscout --verifier-url $BS --constructor-args "$ARGS"
@@ -1349,10 +1365,39 @@ done
 
 ## 5. Product start
 
-- **5.1 — T+10 min**: the engine opens the first epoch (`openQuestions` from the `KEEPER`), aligned to
-  `$CALL_LEDGER_GENESIS` noted in step 4.6.
-- **5.2 — T+10 min**: first verdict published. The declared commitment is "within 10 minutes of
-  launch": it is a step, not a hope.
+### 5.0 The engine goes live on Railway — order matters (review of 21/09)
+
+The engine is not started at T0: it is **already running** from T-1h, and each variable is added
+when the thing it points to exists. Railway: project `natural-nurturing`, engine service
+(`engine/DEPLOY.md`). **The mainnet Postgres is a fresh, empty one**, never the database of the §3
+rehearsal: the engine refuses a database that belongs to another ledger and would crash-loop.
+
+1. **T-1h, index warm-up.** `TOKEN` = placeholder (any graduated Pons token), `LAUNCH_BLOCK` and
+   `V4_START_BLOCK` = head − 1,700,000, `MODEL=none`, no `CALL_LEDGER`. The PoolManager index needs
+   25-40 minutes to reach the head: started at T0 it would make the first epoch late.
+2. **T+5, after DeployCore (§4.6).** Set `TOKEN=$JEVSAID_TOKEN`, `LAUNCH_BLOCK` (§4.4),
+   `CALL_LEDGER`, `KEEPER_PK`, **`LEDGER_START_BLOCK` = block of the DeployCore transactions**
+   (`cast receipt <any DeployCore tx> blockNumber`, now REQUIRED by the engine), `MODEL=jev`,
+   `TYPESAFE_API_KEY`, `JEV_MODEL`. The Transfer cursor is per token, so switching `TOKEN` is clean.
+   The engine reads the genesis from the contract: `$CALL_LEDGER_GENESIS` is for your notes and for
+   the §4.6.4 verification, not an engine variable.
+   Prerequisite: **one real call to TypeSafe checked by hand** before T0 (`engine/README.md`).
+3. **Rewards: first root by hand.** Leave `REWARDS_DISTRIBUTOR`/`SCORER_PK` unset at first; when
+   epoch 0 has ended run `node --import tsx src/cli/main.ts close-epoch 0` (no publish), read the
+   PAYABLE payload, and only then set the two variables. `EXCLUDE` = distributor, ledger, router,
+   swap adapter, `TEAM_WALLET`, the team's wallets, the PoolManager `0x8366…` and the Pons curve:
+   they hold tokens and must never be scored.
+4. **Fees: only after §4.7 `executeBatch`.** `FEE_ROUTER` and `PONS_ESCROW_ADAPTER` stay **unset**
+   until the timelock owns the router, distributor and ledger: with them set the engine claims and
+   buys back on its own, inside the 24h in which the deploy key could still drain the distributor
+   (§4.7, §6.1). Until then the fees wait in the Pons escrow, safely.
+5. **Site.** `NEXT_PUBLIC_TOKEN_ADDRESS` is build-time: set it on the site service and redeploy at
+   T0+. `ENGINE_FEED_URL` = the engine's private domain on Railway.
+
+- **5.1 — T+10 min or so**: the engine opens the first epoch (`openQuestions` from the `KEEPER`) on
+  its own once `CALL_LEDGER` and `MODEL` are set and the index is at the head.
+- **5.2**: first verdict published. The public wording is "shortly after launch", not a minute count:
+  the engine opens a batch only when its data is fresh, and it says so on `/health`.
 - **5.3 — T+15 min**: `TEAM_WALLET` **labeled** on the dashboard for what it is — recipient
   of the team's fee bucket — and next to it the team's share of supply: **zero** (§1.3). The number to
   publish is `teamBps` = 2000 on the fees, not a percentage of supply.
@@ -1364,7 +1409,7 @@ done
   it appears it is a symptom — see point 3 of §7.
 - **5.5 — first `processSwap`: deliberately small.** See §6.1. It is not a generic
   prudence detail: it is the very first time `minOut` is computed on the
-  $JEVSAID pool, which did not exist until yesterday.
+  $JEVSAIDIT pool, which did not exist until yesterday.
 - **5.6 — first 72 hours**: **the splits are not changed.** If the data says they must change, they
   change on day 4, via the timelock, with 24h of public notice.
 - **5.7 — from the launch block, continuously**: the `Transfer` indexer. See below: it is
@@ -1374,7 +1419,7 @@ done
 
 The engine's requirement is **not** "an archive RPC is needed". It is:
 
-> **the engine indexes the $JEVSAID `Transfer` events from the launch block (`LAUNCH_BLOCK`,
+> **the engine indexes the $JEVSAIDIT `Transfer` events from the launch block (`LAUNCH_BLOCK`,
 > §4.4) and derives per-block balances from them, keeping its own book.**
 
 The balance check at the start of an epoch thus becomes a read of a local table, not a

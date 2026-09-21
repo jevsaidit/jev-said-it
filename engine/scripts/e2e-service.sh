@@ -40,13 +40,13 @@ TOK=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast 
 send $TOK 'mint(address,uint256)' $U1 100000$E18 --private-key $PK0
 warp 5; GEN=$(now)
 LED=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast src/CallLedger.sol:CallLedger --constructor-args $TOK $DEP $DEP $GEN | awk '/Deployed to/{print $3}')
-DIST=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast src/RewardsDistributor.sol:RewardsDistributor --constructor-args $TOK $DEP $SCORER $GUARD | awk '/Deployed to/{print $3}')
+DIST=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast src/RewardsDistributor.sol:RewardsDistributor --constructor-args $TOK $DEP $SCORER $GUARD $GEN | awk '/Deployed to/{print $3}')
 send $TOK 'mint(address,uint256)' $DIST 1000000$E18 --private-key $PK0
 
 export RPC_URL=$A LEDGER_RPC_URL=$A TOKEN=$TOK LAUNCH_BLOCK=0 V4_START_BLOCK=0 CONFIRMATIONS=0 \
   CALL_LEDGER=$LED KEEPER_PK=$PK0 REWARDS_DISTRIBUTOR=$DIST SCORER_PK=$PKS LEDGER_START_BLOCK=0 \
-  EXCLUDE="$DIST,$LED" TOP_FRACTION=1 MODEL=stub STUB_P=0.7 QUESTIONS_PER_BATCH=3 MIN_SWAPS_LAST_HOUR=1 \
-  CALL_WINDOW_SEC=21600 POLL_MS=1000 HEALTH_MAX_AGE_SEC=8 PORT=${SERVE_PORT:-18080}
+  EXCLUDE="$DIST,$LED" TOP_FRACTION=1 MODEL=stub STUB_P=0.7 QUESTIONS_PER_BATCH=3 MIN_SWAPS_LAST_HOUR=1 MIN_SWAPS_LAST_6H=1 \
+  CALL_WINDOW_SEC=21600 FEED_CACHE_SEC=0 POLL_MS=1000 HEALTH_MAX_AGE_SEC=8 PORT=${SERVE_PORT:-18080}
 npx tsx src/cli/main.ts migrate
 B=$(cast block-number --rpc-url $A)
 for i in 1 2 3; do

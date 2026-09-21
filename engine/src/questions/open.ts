@@ -1,4 +1,4 @@
-import { decodeEventLog, parseAbi, type Hex, type PublicClient } from "viem";
+import { decodeEventLog, parseAbi, type Hex, type PublicClient, type TransactionReceipt } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { makeWallet } from "../chain/client.js";
 import type { LedgerConfig } from "../config.js";
@@ -64,6 +64,36 @@ export async function openBatch(d: OpenDeps): Promise<OpenResult> {
   }
   const genesis = Number(await read<bigint>("genesis"));
   const now = Number((await ledger.getBlock({ blockTag: "latest" })).timestamp);
+
+  // A batch already sent is settled first, from its receipt: a lost receipt must never leave
+  // questions answerable on-chain but PENDING here (not served, not resolved, not scored).
+  const pend = await db.query<{ tx_hash: string | null; epoch: number; deadline: string; ids: string[]; age: string }>(
+    `SELECT tx_hash, epoch, deadline, array_agg(id) ids, EXTRACT(EPOCH FROM now() - min(created_at))::text age
+       FROM questions WHERE status = 'PENDING' GROUP BY tx_hash, epoch, deadline`,
+  );
+  for (const b of pend.rows) {
+    const ids = b.ids as Hex[];
+    const failIds = async (reason: string): Promise<OpenResult> => {
+      await db.query("UPDATE questions SET status = 'FAILED' WHERE id = ANY($1::text[])", [ids]);
+      return { state: "FAILED", reason };
+    };
+    if (!b.tx_hash) {
+      // Inserted but never sent (a crash in between): nothing is on-chain for these ids.
+      if (Number(b.age) > PENDING_DROP_SEC) await failIds("never sent");
+      else return { state: "SKIPPED", reason: "a batch is being sent" };
+      continue;
+    }
+    const rc = await ledger.getTransactionReceipt({ hash: b.tx_hash as Hex }).catch(() => null);
+    if (!rc) {
+      if (await ledger.getTransaction({ hash: b.tx_hash as Hex }).catch(() => null)) return { state: "SKIPPED", reason: `openQuestions ${b.tx_hash} not mined yet` };
+      if (Number(b.age) <= PENDING_DROP_SEC) return { state: "SKIPPED", reason: `openQuestions ${b.tx_hash} not known to the node yet` };
+      await failIds(`openQuestions ${b.tx_hash} dropped`);
+      continue;
+    }
+    const r = await settleOpen(db, ledger, cfg, genesis, { epoch: b.epoch, deadline: Number(b.deadline), ids, tx: b.tx_hash as Hex }, rc);
+    if (r.state === "OPENED") return r;
+  }
+
   const plan = planBatch({ now, genesis, ...cfg });
   if (!plan.open) return { state: "SKIPPED", reason: plan.reason };
 
@@ -76,10 +106,11 @@ export async function openBatch(d: OpenDeps): Promise<OpenResult> {
   const cands = await selectCandidates(db, {
     head,
     minSwapsLastHour: cfg.minSwapsLastHour,
+    minSwapsLast6h: cfg.minSwapsLast6h,
     limit: cfg.questionsPerBatch,
     exclude: d.excludeTokens,
   });
-  if (cands.length === 0) return { state: "SKIPPED", reason: "no graduated token with enough swaps in the last hour" };
+  if (cands.length === 0) return { state: "SKIPPED", reason: "no graduated token with enough swaps in the last hour and the last 6h" };
 
   const ledgerChainId = await ledger.getChainId();
   const rows: Array<{ id: Hex; json: string; token: string; poolId: string; symbol: string | null }> = [];
@@ -148,31 +179,55 @@ export async function openBatch(d: OpenDeps): Promise<OpenResult> {
   } catch (e) {
     return fail(`send failed: ${(e as Error).message.split("\n")[0]}`);
   }
-  const receipt = await ledger.waitForTransactionReceipt({ hash: tx });
-  if (receipt.status !== "success") return fail(`tx ${tx} reverted`);
+  // Stored before waiting: if the receipt never comes back, the next pass settles the batch from it.
+  await db.query("UPDATE questions SET tx_hash = $2 WHERE id = ANY($1::text[])", [ids, tx]);
+  const receipt = await ledger.waitForTransactionReceipt({ hash: tx }).catch(() => null);
+  if (!receipt) return { state: "SKIPPED", reason: `openQuestions ${tx} sent, receipt not read yet` };
+  return settleOpen(db, ledger, cfg, genesis, { epoch: plan.epoch, deadline: plan.deadline, ids, tx }, receipt);
+}
 
-  // The effect, not the action: the event must say exactly what we asked for, and the tx must
-  // have been included within the epoch and before the deadline.
+/** A PENDING row with no hash, or with a hash the node forgot, is given up after this long. */
+const PENDING_DROP_SEC = 600;
+
+/**
+ * The effect, not the action: from the receipt of openQuestions, the event must say exactly what was
+ * asked, and the tx must have been included within the epoch and before the deadline. Only then do
+ * the questions become OPEN (served, resolved, scored).
+ */
+async function settleOpen(
+  db: Db,
+  ledger: PublicClient,
+  cfg: OpenDeps["cfg"],
+  genesis: number,
+  b: { epoch: number; deadline: number; ids: Hex[]; tx: Hex },
+  receipt: TransactionReceipt,
+): Promise<OpenResult> {
+  const fail = async (reason: string): Promise<OpenResult> => {
+    await db.query("UPDATE questions SET status = 'FAILED' WHERE id = ANY($1::text[])", [b.ids]);
+    return { state: "FAILED", reason };
+  };
+  if (receipt.status !== "success") return fail(`tx ${b.tx} reverted`);
   const ev = receipt.logs
     .filter((l) => l.address.toLowerCase() === cfg.callLedger.toLowerCase())
     .map((l) => decodeEventLog({ abi: LEDGER_ABI, data: l.data, topics: l.topics, strict: true }))
     .find((e) => e.eventName === "QuestionsOpened");
   const incl = Number((await ledger.getBlock({ blockNumber: receipt.blockNumber })).timestamp);
   const problems: string[] = [];
+  const sorted = (xs: readonly string[]) => [...xs].map((x) => x.toLowerCase()).sort().join();
   if (!ev || ev.eventName !== "QuestionsOpened") problems.push("no QuestionsOpened event");
   else {
-    if (Number(ev.args.epoch) !== plan.epoch) problems.push(`event epoch ${ev.args.epoch} != ${plan.epoch}`);
-    if (Number(ev.args.deadline) !== plan.deadline) problems.push(`event deadline ${ev.args.deadline} != ${plan.deadline}`);
-    if (ev.args.ids.join() !== ids.join()) problems.push("event ids differ from the ones sent");
+    if (Number(ev.args.epoch) !== b.epoch) problems.push(`event epoch ${ev.args.epoch} != ${b.epoch}`);
+    if (Number(ev.args.deadline) !== b.deadline) problems.push(`event deadline ${ev.args.deadline} != ${b.deadline}`);
+    if (sorted(ev.args.ids) !== sorted(b.ids)) problems.push("event ids differ from the ones sent");
   }
-  if (epochOf(incl, genesis) !== plan.epoch) problems.push(`tx included in epoch ${epochOf(incl, genesis)}, not ${plan.epoch}`);
-  if (incl >= plan.deadline) problems.push("tx included after the deadline");
+  if (epochOf(incl, genesis) !== b.epoch) problems.push(`tx included in epoch ${epochOf(incl, genesis)}, not ${b.epoch}`);
+  if (incl >= b.deadline) problems.push("tx included after the deadline");
   if (problems.length) return fail(`opened on-chain but unusable: ${problems.join("; ")}`);
 
   await db.query("UPDATE questions SET status = 'OPEN', tx_hash = $2, opened_block = $3 WHERE id = ANY($1::text[])", [
-    ids,
-    tx,
+    b.ids,
+    b.tx,
     receipt.blockNumber.toString(),
   ]);
-  return { state: "OPENED", epoch: plan.epoch, deadline: plan.deadline, ids, tx, block: receipt.blockNumber };
+  return { state: "OPENED", epoch: b.epoch, deadline: b.deadline, ids: b.ids, tx: b.tx, block: receipt.blockNumber };
 }

@@ -73,6 +73,7 @@ export interface LedgerConfig {
   horizonSec: number;
   questionsPerBatch: number;
   minSwapsLastHour: number;
+  minSwapsLast6h: number;
 }
 
 export function loadLedgerConfig(): LedgerConfig {
@@ -86,6 +87,7 @@ export function loadLedgerConfig(): LedgerConfig {
     horizonSec: num("HORIZON_SEC", 6 * 3600),
     questionsPerBatch: num("QUESTIONS_PER_BATCH", 10),
     minSwapsLastHour: num("MIN_SWAPS_LAST_HOUR", 10),
+    minSwapsLast6h: num("MIN_SWAPS_LAST_6H", 60),
   };
 }
 
@@ -110,7 +112,9 @@ export function loadRewardsConfig(): RewardsConfig {
   return {
     rewardsDistributor: need("REWARDS_DISTRIBUTOR") as Address,
     scorerPk: need("SCORER_PK") as Hex,
-    ledgerStartBlock: BigInt(num("LEDGER_START_BLOCK", 0)),
+    // Required: a default of 0 made the first closeEpoch scan the ledger from genesis in thousands of
+    // getLogs on the shared RPC, starving the indexer. It is the block of the DeployCore transaction.
+    ledgerStartBlock: BigInt(need("LEDGER_START_BLOCK")),
     excluded: need("EXCLUDE").split(",").map((a) => a.trim().toLowerCase()).filter(Boolean),
     reference: ref,
     topFraction: top,

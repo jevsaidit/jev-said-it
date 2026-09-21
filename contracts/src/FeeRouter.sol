@@ -59,6 +59,8 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
     error ZeroAddress();
     error NotConfigured();
     error TransferFailed();
+    error ZeroMinOut();
+
 
     constructor(
         address token_,
@@ -132,6 +134,8 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
     ///         The keeper picks the block (random window) and computes minOut off-chain.
     function processSwap(uint256 minOut) external nonReentrant {
         if (msg.sender != keeper) revert NotAuthorized();
+        // A zero floor would hand the whole bucket to whoever sandwiches the swap, the keeper included.
+        if (minOut == 0) revert ZeroMinOut();
         if (address(swapAdapter) == address(0) || rewardsDistributor == address(0)) revert NotConfigured();
         if (undistributed > 0) distribute();
         uint256 ethIn = swapBalance;

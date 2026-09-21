@@ -80,7 +80,8 @@ contract DeployCore is Script {
 
         // deployer is temporary owner for configuration, then hands over to the timelock
         FeeRouter router = new FeeRouter(c.token, c.deployer, c.computeWallet, c.opsWallet, c.teamWallet, c.keeper);
-        RewardsDistributor dist = new RewardsDistributor(c.token, c.deployer, c.scorer, c.guardian);
+        // Same genesis for both: the distributor only accepts roots for epochs of the ledger that have ended.
+        RewardsDistributor dist = new RewardsDistributor(c.token, c.deployer, c.scorer, c.guardian, block.timestamp);
         CallLedger ledger = new CallLedger(c.token, c.deployer, c.keeper, block.timestamp);
         UniV4SwapAdapter swapAdapter = new UniV4SwapAdapter(c.universalRouter, c.deployer);
 

@@ -19,7 +19,9 @@ contract RewardsDistributorTest is Test {
 
     function setUp() public {
         token = new MockERC20();
-        dist = new RewardsDistributor(address(token), owner, scorer, guardian);
+        // Genesis far enough back that the epochs these tests use (1..5) have all ended.
+        vm.warp(30 days);
+        dist = new RewardsDistributor(address(token), owner, scorer, guardian, 1);
         m = new Merkle();
         token.mint(address(dist), 1_000e18);
         leaves.push(_leaf(alice, 60e18));
@@ -177,7 +179,7 @@ contract RewardsDistributorTest is Test {
     ///      a distributor with no valve and does not say so.
     function test_constructor_rejects_zero_guardian() public {
         vm.expectRevert(RewardsDistributor.ZeroAddress.selector);
-        new RewardsDistributor(address(token), owner, scorer, address(0));
+        new RewardsDistributor(address(token), owner, scorer, address(0), 1);
     }
 
     function test_setGuardian_rejects_zero() public {
@@ -339,5 +341,34 @@ contract RewardsDistributorTest is Test {
         vm.prank(bob);
         vm.expectRevert(RewardsDistributor.BudgetExceeded.selector);
         dist.claim(1, 40e18, proofBob);
+    }
+
+    /// One scorer transaction used to be enough to lock the distributor forever:
+    /// setEpochRoot(type(uint256).max, ...) moved lastEpoch out of reach of every later root.
+    function test_setEpochRoot_refuses_epochs_that_have_not_ended() public {
+        bytes32 root = m.getRoot(leaves);
+        uint256 current = (block.timestamp - dist.genesis()) / dist.EPOCH_LENGTH();
+        vm.startPrank(scorer);
+        vm.expectRevert(RewardsDistributor.EpochNotEnded.selector);
+        dist.setEpochRoot(current, root, 50e18);
+        vm.expectRevert(); // overflow on the bound: an absurd epoch cannot even be evaluated
+        dist.setEpochRoot(type(uint256).max, root, 0);
+        // and the distributor is not bricked: the last ended epoch still publishes
+        dist.setEpochRoot(current - 1, root, 50e18);
+        vm.stopPrank();
+        assertEq(dist.lastEpoch(), current - 1);
+    }
+
+    function test_claim_closes_with_the_claim_window() public {
+        bytes32 root = m.getRoot(leaves);
+        vm.prank(scorer);
+        dist.setEpochRoot(1, root, 101e18);
+        bytes32[] memory proof = m.getProof(leaves, 0);
+        vm.warp(block.timestamp + dist.CLAIM_WINDOW());
+        vm.prank(alice);
+        vm.expectRevert(RewardsDistributor.ClaimWindowClosed.selector);
+        dist.claim(1, 60e18, proof);
+        dist.sweepExpired(1);
+        assertEq(dist.committed(), 0);
     }
 }

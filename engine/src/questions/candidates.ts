@@ -12,19 +12,21 @@ export interface Candidate {
 
 /**
  * Tokens graduated on Pons in the last 48h, with enough swaps in the last hour to have a price
- * that moves. A dead pool would give a question whose outcome is already written (flat price = 0).
+ * that moves, AND over the last 6h: a pool that woke up for one hour and died gives a question with
+ * no swap in its settlement window, i.e. a VOID (seen twice in one testnet batch, 21/09). On 57h of
+ * mainnet history the 6h floor removed no question from any batch: it costs nothing today.
  * Our own token is excluded: asking about our own price is a conflict, and an invitation to pump it.
  */
 export async function selectCandidates(
   db: Db,
-  p: { head: bigint; minSwapsLastHour: number; limit: number; exclude: string[] },
+  p: { head: bigint; minSwapsLastHour: number; minSwapsLast6h: number; limit: number; exclude: string[] },
 ): Promise<Candidate[]> {
   const r = await db.query<{ pool_id: string; token: string; n: string }>(
-    `SELECT p.pool_id, p.token, count(s.*) n
-       FROM pools p JOIN swaps s ON s.pool_id = p.pool_id AND s.block > $2
+    `SELECT p.pool_id, p.token, count(s.*) FILTER (WHERE s.block > $2) n
+       FROM pools p JOIN swaps s ON s.pool_id = p.pool_id AND s.block > $6
       WHERE p.start_block > $1 AND NOT (p.token = ANY($5::text[]))
       GROUP BY p.pool_id, p.token
-     HAVING count(s.*) >= $3
+     HAVING count(s.*) FILTER (WHERE s.block > $2) >= $3 AND count(s.*) >= $7
       ORDER BY n DESC, p.pool_id
       LIMIT $4`,
     [
@@ -33,6 +35,8 @@ export async function selectCandidates(
       p.minSwapsLastHour,
       p.limit,
       p.exclude.map((a) => a.toLowerCase()),
+      (p.head - 6n * BLOCKS_PER_HOUR).toString(),
+      p.minSwapsLast6h,
     ],
   );
   return r.rows.map((x) => ({ poolId: x.pool_id, token: x.token, swapsLastHour: Number(x.n) }));

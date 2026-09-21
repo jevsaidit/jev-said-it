@@ -85,4 +85,12 @@ contract PonsEscrowAdapterTest is Test {
         adapter.setRouter(payable(address(sink)));
         assertEq(adapter.router(), address(sink));
     }
+    /// setRouter is one-shot and pasted by hand: an address with no code must not be accepted.
+    function test_setRouter_refuses_an_address_with_no_code() public {
+        vm.prank(owner);
+        vm.expectRevert(PonsEscrowAdapter.InvalidRouter.selector);
+        adapter.setRouter(payable(address(0xBAD)));
+        assertEq(adapter.router(), address(0));
+    }
+
 }

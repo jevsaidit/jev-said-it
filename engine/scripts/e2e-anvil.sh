@@ -30,6 +30,12 @@ q "INSERT INTO cursors VALUES ('v4', $H) ON CONFLICT (name) DO UPDATE SET block 
 for i in $(seq 1 10); do
   q "INSERT INTO pools VALUES ('0x$(printf '%064x' $i)', '0x$(printf '%040x' $i)', $((H - 1000)))" >/dev/null
   for j in $(seq 1 $((20 - i))); do q "INSERT INTO swaps VALUES ('0x$(printf '%064x' $i)', $((H - 100 + j)), $i, '0x', '0x', 0, 0, 1000000000000000000000000000000, 0, 0, 0)" >/dev/null; done
+  # Pools 1-9 also traded between 1h and 6h ago (60 swaps); pool 10 is a one-hour burst on an
+  # otherwise dead pool: 10 swaps in the last hour and nothing before. The 6h floor must drop it.
+  if [ $i -le 9 ]; then
+    V=$(for j in $(seq 1 60); do printf "('0x%064x', %d, %d, '0x', '0x', 0, 0, 1000000000000000000000000000000, 0, 0, 0)," $i $((H - 170000 + j)) $((i * 1000 + j)); done)
+    q "INSERT INTO swaps VALUES ${V%,}" >/dev/null
+  fi
 done
 ok=0; ko=0
 check() { if [ "$1" = "$2" ]; then echo "  ✓ $3"; ok=$((ok+1)); else echo "  ✗ $3 — expected '$2', got '$1'"; ko=$((ko+1)); fi; }
@@ -38,6 +44,7 @@ q "DELETE FROM questions" >/dev/null   # DEVELOPMENT database: never against the
 echo "1. opening a batch"
 out=$(npx tsx src/cli/main.ts open-questions --stub); echo "   $out" | cut -c1-160
 check "$(echo "$out" | jq -r .state)" OPENED "batch opened"
+check "$(q "SELECT count(*) FROM questions") $(q "SELECT count(*) FROM questions WHERE token = '0x$(printf '%040x' 10)'")" "9 0" "9 questions: the one-hour burst pool (10) is dropped by the 6h floor"
 EPOCH=$(echo "$out" | jq -r .epoch); DL=$(echo "$out" | jq -r .deadline)
 ID0=$(echo "$out" | jq -r '.ids[0]'); ID1=$(echo "$out" | jq -r '.ids[1]')
 

@@ -28,7 +28,8 @@ contract MerkleFixtureTest is Test {
         root = json.readBytes32(".root");
         budget = json.readUint(".budget");
         token = new MockERC20();
-        dist = new RewardsDistributor(address(token), owner, scorer, guardian);
+        dist = new RewardsDistributor(address(token), owner, scorer, guardian, block.timestamp);
+        vm.warp(block.timestamp + dist.EPOCH_LENGTH()); // epoch 0 must have ended before its root
         // The per-epoch cap is 20% of the free balance: the distributor holds five times the budget.
         token.mint(address(dist), budget * 5);
         vm.prank(scorer);

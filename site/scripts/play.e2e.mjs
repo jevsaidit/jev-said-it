@@ -59,6 +59,7 @@ try {
     out.hash = await page.locator(".play__tx").getAttribute("data-tx");
     await page.waitForFunction(() => document.querySelectorAll(".play__done").length > 0, null, { timeout: 20_000 });
     out.after = await text();
+    out.share = await page.locator(".play__share a").evaluateAll((as) => as.map((a) => a.href));
   }
   if (step === "late") {
     out.submitDisabled = await page.locator(".play > .btn").isDisabled();
@@ -72,6 +73,7 @@ try {
     out.tx = (await page.locator(".play__tx").innerText()).trim();
     await page.locator(".play__claims .play__done").waitFor({ timeout: 20_000 });
     out.after = await text();
+    out.share = await page.locator(".play__share a").evaluateAll((as) => as.map((a) => a.href));
   }
 } catch (e) {
   out.error = String(e).split("\n")[0];

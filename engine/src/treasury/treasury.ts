@@ -44,6 +44,7 @@ export interface TreasuryConfig {
 
 export type TreasuryOutcome =
   | { state: "IDLE"; detail: string }
+  | { state: "WAITING"; detail: string }
   | { state: "OK"; claimed?: string; swapped?: { epoch: number; ethIn: string; tokenOut: string; minOut: string; tx: Hex } }
   | { state: "FAILED"; reason: string };
 
@@ -95,6 +96,56 @@ async function haircutBps(chain: PublicClient, token: Address): Promise<bigint> 
   return BigInt(hookFee) + creatorTax;
 }
 
+/** A buyback whose transaction left but whose outcome is not recorded yet. */
+const SWAP_PENDING = "SWAP_PENDING";
+/** Kinds that close an epoch's buyback: never send another processSwap for that epoch. A reverted
+ *  swap closes it too: resending the same minOut into the same pool every 15s only burns gas. */
+const SWAP_FINAL = ["SWAP", "SWAP_SKIPPED", "SWAP_REVERTED"];
+/** A pending transaction the node no longer knows is dropped after this long, and may be resent. */
+const DROP_AFTER_SEC = 600;
+
+type Pending = { epoch: number; tx: Hex; detail: { minOut: string; gross: string; haircutBps: string; slippageBps: string }; ageSec: number };
+
+async function pendingSwaps(db: Db): Promise<Pending[]> {
+  const r = await db.query<{ epoch: number; tx_hash: string; detail: string; age: string }>(
+    `SELECT p.epoch, p.tx_hash, p.detail, EXTRACT(EPOCH FROM now() - p.at)::text age
+       FROM treasury_ops p
+      WHERE p.kind = $1
+        AND NOT EXISTS (SELECT 1 FROM treasury_ops f WHERE f.tx_hash = p.tx_hash AND f.kind <> $1)
+      ORDER BY p.id`,
+    [SWAP_PENDING],
+  );
+  return r.rows.map((x) => ({ epoch: x.epoch, tx: x.tx_hash as Hex, detail: JSON.parse(x.detail), ageSec: Number(x.age) }));
+}
+
+/**
+ * Turns a sent processSwap into its final record, reading the receipt. Returns null while the
+ * outcome is not knowable yet (still in the mempool, or the node does not answer).
+ */
+async function settleSwap(db: Db, chain: PublicClient, cfg: TreasuryConfig, p: Pending): Promise<TreasuryOutcome | null> {
+  const rc = await chain.getTransactionReceipt({ hash: p.tx }).catch(() => null);
+  if (!rc) {
+    const inPool = await chain.getTransaction({ hash: p.tx }).catch(() => null);
+    if (inPool || p.ageSec < DROP_AFTER_SEC) return null;
+    await record(db, p.epoch, "SWAP_DROPPED", p.tx, { ...p.detail, note: `unknown to the node after ${Math.round(p.ageSec)}s` });
+    return { state: "FAILED", reason: `processSwap ${p.tx} dropped: the next pass may send a new one` };
+  }
+  const minOut = BigInt(p.detail.minOut);
+  const ev = eventsOf(ROUTER_ABI, cfg.router, rc.logs).find((e) => e.eventName === "SwapProcessed");
+  // The effect, not the send: the event must show at least minOut, split exactly into burn + rewards.
+  if (rc.status !== "success" || !ev) {
+    await record(db, p.epoch, rc.status === "success" ? "SWAP" : "SWAP_REVERTED", p.tx, { ...p.detail, note: "no SwapProcessed event read" });
+    return { state: "FAILED", reason: `processSwap ${p.tx}: no SwapProcessed event (status ${rc.status})` };
+  }
+  const a = ev.args as { ethIn: bigint; tokenOut: bigint; burned: bigint; toRewards: bigint };
+  if (a.tokenOut < minOut || a.burned + a.toRewards !== a.tokenOut) {
+    await record(db, p.epoch, "SWAP", p.tx, { ...a, ...p.detail, note: "event does not add up" });
+    return { state: "FAILED", reason: `processSwap ${p.tx}: event does not add up` };
+  }
+  await record(db, p.epoch, "SWAP", p.tx, { ...a, ...p.detail });
+  return { state: "OK", swapped: { epoch: p.epoch, ethIn: a.ethIn.toString(), tokenOut: a.tokenOut.toString(), minOut: p.detail.minOut, tx: p.tx } };
+}
+
 /**
  * One treasury pass: collect what the Pons escrow owes the adapter, and once per epoch, at a
  * time only we can predict, run the buyback. Fees reach the escrow only when Pons' operator sweeps
@@ -120,12 +171,21 @@ export async function runTreasury(db: Db, chain: PublicClient, cfg: TreasuryConf
     await record(db, null, "CLAIM", tx, { forwarded: ev.args.amount });
   }
 
-  // 2. Buyback: once per epoch, not before its secret time.
+  // 2. A buyback already sent is settled before anything else: its hash was stored the moment it
+  //    left, so a slow receipt, a node error or a restart can never make us send a second one.
+  for (const p of await pendingSwaps(db)) {
+    const settled = await settleSwap(db, chain, cfg, p);
+    if (settled === null) return { state: "WAITING", detail: `processSwap ${p.tx} sent, outcome not known yet` };
+    if (settled.state === "FAILED") return settled;
+    out.swapped = (settled as { swapped?: typeof out.swapped }).swapped;
+  }
+
+  // 3. Buyback: once per epoch, not before its secret time.
   const now = Number((await chain.getBlock({ blockTag: "latest" })).timestamp);
   const epoch = epochOf(now, genesis);
   const due = swapTime(cfg.keeperPk, epoch, genesis);
-  const done = await db.query("SELECT 1 FROM treasury_ops WHERE epoch = $1 AND kind IN ('SWAP', 'SWAP_SKIPPED') LIMIT 1", [epoch]);
-  if (now >= due && !done.rowCount) {
+  const done = await db.query("SELECT 1 FROM treasury_ops WHERE epoch = $1 AND kind = ANY($2::text[]) LIMIT 1", [epoch, SWAP_FINAL]);
+  if (now >= due && !done.rowCount && !out.swapped) {
     if ((await chain.readContract({ address: cfg.router, abi: ROUTER_ABI, functionName: "keeper" })).toLowerCase() !== keeper.address.toLowerCase()) {
       return { state: "FAILED", reason: `${keeper.address} is not the router's keeper` };
     }
@@ -151,22 +211,19 @@ export async function runTreasury(db: Db, chain: PublicClient, cfg: TreasuryConf
         functionName: "processSwap",
         args: [minOut],
       });
-      const rc = await chain.waitForTransactionReceipt({ hash: tx });
-      const ev = eventsOf(ROUTER_ABI, cfg.router, rc.logs).find((e) => e.eventName === "SwapProcessed");
-      // The effect, not the send: the event must show at least minOut, split exactly into burn + rewards.
-      // Whatever happens, the transaction is recorded under the epoch: a buyback that went through
-      // on-chain must never be retried or lost because reading its receipt failed.
-      if (rc.status !== "success" || !ev) {
-        await record(db, epoch, rc.status === "success" ? "SWAP" : "SWAP_REVERTED", tx, { minOut, gross, note: "no SwapProcessed event read" });
-        return { state: "FAILED", reason: `processSwap ${tx}: no SwapProcessed event (status ${rc.status})` };
-      }
-      const a = ev.args as { ethIn: bigint; tokenOut: bigint; burned: bigint; toRewards: bigint };
-      if (a.tokenOut < minOut || a.burned + a.toRewards !== a.tokenOut) {
-        await record(db, epoch, "SWAP", tx, { ...a, minOut, note: "event does not add up" });
-        return { state: "FAILED", reason: `processSwap ${tx}: event does not add up` };
-      }
-      out.swapped = { epoch, ethIn: a.ethIn.toString(), tokenOut: a.tokenOut.toString(), minOut: minOut.toString(), tx };
-      await record(db, epoch, "SWAP", tx, { ...a, minOut, gross, haircutBps: cut, slippageBps: cfg.slippageBps });
+      const p: Pending = {
+        epoch,
+        tx,
+        detail: { minOut: minOut.toString(), gross: gross.toString(), haircutBps: cut.toString(), slippageBps: cfg.slippageBps.toString() },
+        ageSec: 0,
+      };
+      await record(db, epoch, SWAP_PENDING, tx, p.detail);
+      // A receipt that does not come in time is not a failure: the pending row settles it next pass.
+      await chain.waitForTransactionReceipt({ hash: tx }).catch(() => null);
+      const settled = await settleSwap(db, chain, cfg, p);
+      if (settled === null) return { state: "WAITING", detail: `processSwap ${tx} sent, outcome not known yet` };
+      if (settled.state === "FAILED") return settled;
+      out.swapped = (settled as { swapped?: typeof out.swapped }).swapped;
     }
   }
   return out.claimed || out.swapped ? { state: "OK", ...out } : { state: "IDLE", detail: `next buyback not before ${due}` };

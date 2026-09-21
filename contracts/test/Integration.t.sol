@@ -39,7 +39,7 @@ contract IntegrationTest is Test {
         adapter = new PonsEscrowAdapter(address(escrow), owner);
         // Phase 2: core after the launch
         router = new FeeRouter(address(token), owner, compute, ops, team, keeper);
-        dist = new RewardsDistributor(address(token), owner, scorer, guardian);
+        dist = new RewardsDistributor(address(token), owner, scorer, guardian, block.timestamp);
         ledger = new CallLedger(address(token), owner, keeper, block.timestamp);
         swapAdapter = new MockSwapAdapter(address(token), 1000);
         // The fake adapter does not mint: it delivers from its own balance, like the real one.
@@ -83,7 +83,7 @@ contract IntegrationTest is Test {
 
         // 4. the keeper processes the swap
         vm.prank(keeper);
-        router.processSwap(0);
+        router.processSwap(1);
         uint256 out = 6.5 ether * 1000;
         uint256 burned = out * 1500 / 6500;
         assertEq(token.balanceOf(router.DEAD()), burned);
@@ -97,6 +97,8 @@ contract IntegrationTest is Test {
         leaves[0] = keccak256(bytes.concat(keccak256(abi.encode(alice, 3e18))));
         leaves[1] = keccak256(bytes.concat(keccak256(abi.encode(bob, 1e18))));
         bytes32 root = m.getRoot(leaves);
+        // The engine closes an epoch only after it has ended; the distributor now enforces it.
+        vm.warp(dist.genesis() + dist.EPOCH_LENGTH());
         vm.prank(scorer);
         dist.setEpochRoot(0, root, 4e18);
 

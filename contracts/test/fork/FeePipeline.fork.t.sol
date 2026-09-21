@@ -248,7 +248,7 @@ contract FeePipelineForkTest is Test {
     /// 5. The project contracts, wired as DeployCore does (owner = this test, not a timelock).
     function _wire() internal {
         router = new FeeRouter(token, address(this), computeWallet, opsWallet, teamWallet, keeper);
-        dist = new RewardsDistributor(token, address(this), scorer, guardian);
+        dist = new RewardsDistributor(token, address(this), scorer, guardian, block.timestamp - 6 hours); // epoch 0 already ended
         router.setSwapAdapter(address(swapAdapter));
         router.setRewardsDistributor(address(dist));
         feeAdapter.setRouter(payable(address(router)));

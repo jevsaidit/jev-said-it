@@ -32,6 +32,9 @@ contract PonsEscrowAdapter is IFeeSource, Ownable {
     function setRouter(address payable router_) external onlyOwner {
         if (router != address(0)) revert AlreadySet();
         if (router_ == address(0) || router_ == address(this)) revert InvalidRouter();
+        // One-shot and pasted by hand: an address with no code (a typo, an EOA) would receive every
+        // future claim and could only be undone through Pons' 3+3-day recipient timelock.
+        if (router_.code.length == 0) revert InvalidRouter();
         router = router_;
         emit RouterSet(router_);
     }

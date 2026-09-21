@@ -195,7 +195,7 @@ contract FeeRouterTest is Test {
         (bool ok,) = address(router).call{value: 10 ether}("");
         assertTrue(ok);
         vm.prank(keeper);
-        router.processSwap(0);
+        router.processSwap(1);
         // 10 ether in -> swap bucket 6.5 ether -> mock rate 1000 -> out = 6500 ether-equivalent
         // burn share 1500/6500 of 6500 = 1500 ether; rewards share = 5000 ether.
         assertEq(token.balanceOf(router.DEAD()), 1500 ether);
@@ -210,7 +210,7 @@ contract FeeRouterTest is Test {
         (bool ok,) = address(router).call{value: 1 ether}("");
         assertTrue(ok);
         vm.expectRevert(FeeRouter.NotAuthorized.selector);
-        router.processSwap(0);
+        router.processSwap(1);
         vm.prank(keeper);
         vm.expectRevert("slippage");
         router.processSwap(type(uint256).max);
@@ -221,7 +221,7 @@ contract FeeRouterTest is Test {
         assertTrue(ok);
         vm.prank(keeper);
         vm.expectRevert(FeeRouter.NotConfigured.selector);
-        router.processSwap(0);
+        router.processSwap(1);
     }
 
     function test_timelock_as_owner_enforces_24h_delay() public {
@@ -271,7 +271,7 @@ contract FeeRouterTest is Test {
         vm.expectEmit(false, false, false, true, address(r));
         emit FeeRouter.SwapProcessed(6.5 ether, 6435 ether, 1485 ether, 4950 ether);
         vm.prank(keeper);
-        r.processSwap(0);
+        r.processSwap(1);
 
         assertEq(fot.balanceOf(address(r)), 0, "the router keeps nothing of what arrived");
         // the two outgoing legs also lose 1%: 1485 -> 1470.15 and 4950 -> 4900.5
@@ -289,4 +289,14 @@ contract FeeRouterTest is Test {
         assertEq(r.opsBalance(), 1 ether);
         assertEq(r.teamBalance(), 2 ether);
     }
+    /// minOut = 0 would hand the whole swap bucket to whoever sandwiches it, keeper included.
+    function test_processSwap_refuses_minOut_zero() public {
+        _configureSwap();
+        (bool ok,) = address(router).call{value: 10 ether}("");
+        assertTrue(ok);
+        vm.prank(keeper);
+        vm.expectRevert(FeeRouter.ZeroMinOut.selector);
+        router.processSwap(0);
+    }
+
 }
