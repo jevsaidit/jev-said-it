@@ -1,0 +1,41 @@
+# WARNING: from this path this workflow is NOT executed.
+# GitHub Actions reads only <repo-root>/.github/workflows/, and the root of this
+# repository is the folder that contains contracts/, not contracts/ itself. The repository
+# has had a GitHub remote since 2026-09-21, but the file is still not read from here.
+# This file has never run. To make it real: move it to the root and add
+# working-directory: contracts. See contracts/docs/security-checklist.md, section on CI.
+name: CI
+
+permissions: {}
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Foundry project
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Show Forge version
+        run: forge --version
+
+      - name: Run Forge fmt
+        run: forge fmt --check
+
+      - name: Run Forge build
+        run: forge build --sizes
+
+      - name: Run Forge tests
+        run: forge test -vvv
