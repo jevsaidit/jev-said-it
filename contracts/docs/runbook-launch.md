@@ -1443,7 +1443,7 @@ down and the log window passes, those epochs **cannot be reconstructed**:
 1. an approximate root is not published;
 2. the epochs that cannot be reconstructed are **voided** with `voidEpoch` within the 12-hour window (§7),
    or their root is simply not published;
-3. the budget returns to the free balance and the forecasters are paid the next epoch.
+3. the budget returns to the free balance. **The winners of the voided epoch are not paid later**: the engine does not rescore a voided epoch, and its number cannot be published again (`RootExists`). The budget goes to the following epochs' winners. Decided on 22/09: simpler, and nothing to exploit.
 
 **When in doubt nobody is paid, rather than paying wrongly.** A wrong root that has been claimed does not come
 back; a postponed round of rewards can be recovered.
@@ -1696,8 +1696,8 @@ are four twelve-hour windows, overlapping. **A guardian who does not watch is no
    that window: the balances the root relies on cannot be verified, so the root cannot be
    verified.
 6. Serious doubt that cannot be resolved within the window. **When in doubt, void**: a voided epoch
-   costs one postponed round of rewards, the budget returns to the free balance and the forecasters are
-   paid the next epoch. A fraudulent root that has been claimed does not come back.
+   costs one round of rewards: the budget returns to the free balance and funds the following
+   epochs; that epoch's winners are not paid (§5.7 list, point 3). A fraudulent root that has been claimed does not come back.
 
 ```bash
 cast send $REWARDS_DISTRIBUTOR 'voidEpoch(uint256)' <EPOCH> \

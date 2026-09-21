@@ -20,7 +20,7 @@ const EPOCH = [
   {
     t: `close + ${RULES.horizonHours}h`,
     h: "Settle",
-    p: "Last swap price before the close against the last swap price six hours later. Strictly higher counts as up.",
+    p: "The average price over the ten minutes before the close against the same average six hours later. Strictly higher counts as up. A price pushed in the last block barely moves an average.",
   },
   {
     t: "end of epoch e+1",

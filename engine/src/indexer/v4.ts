@@ -105,3 +105,50 @@ export async function lastSqrtPriceAt(db: Db, poolId: string, block: bigint): Pr
   const row = r.rows[0];
   return row ? { sqrtPriceX96: BigInt(row.sqrt_price_x96), block: BigInt(row.block) } : null;
 }
+
+/**
+ * Block-weighted (= time-weighted, blocks are ~0.105s and regular) average of sqrtPriceX96 over the
+ * blocks (from, to]. Each price holds from the block of its swap until the next swap; the price in
+ * force at `from` is the last swap at or before it. Pure: the arithmetic is tested on its own.
+ * null when no price exists anywhere in the window (no swap at or before `to`).
+ */
+export function timeWeightedSqrt(
+  start: bigint | null,
+  swaps: Array<{ block: bigint; sqrtPriceX96: bigint }>, // (from, to], ordered; last swap of a block wins
+  from: bigint,
+  to: bigint,
+): bigint | null {
+  let cur = start;
+  let prev = from;
+  let acc = 0n;
+  let weight = 0n;
+  for (const s of swaps) {
+    if (cur !== null && s.block > prev) {
+      acc += cur * (s.block - prev);
+      weight += s.block - prev;
+    }
+    if (cur === null) prev = s.block; // no price before the first swap: weight starts there
+    else if (s.block > prev) prev = s.block;
+    cur = s.sqrtPriceX96;
+  }
+  if (cur !== null && to > prev) {
+    acc += cur * (to - prev);
+    weight += to - prev;
+  }
+  if (cur === null) return null;
+  return weight === 0n ? cur : acc / weight;
+}
+
+export async function averageSqrtPrice(db: Db, poolId: string, from: bigint, to: bigint): Promise<bigint | null> {
+  const start = await lastSqrtPriceAt(db, poolId, from);
+  const r = await db.query<{ block: string; sqrt_price_x96: string }>(
+    `SELECT block, sqrt_price_x96 FROM swaps WHERE pool_id = $1 AND block > $2 AND block <= $3 ORDER BY block, log_index`,
+    [poolId.toLowerCase(), from.toString(), to.toString()],
+  );
+  return timeWeightedSqrt(
+    start?.sqrtPriceX96 ?? null,
+    r.rows.map((x) => ({ block: BigInt(x.block), sqrtPriceX96: BigInt(x.sqrt_price_x96) })),
+    from,
+    to,
+  );
+}

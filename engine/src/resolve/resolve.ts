@@ -1,7 +1,7 @@
 import type { PublicClient } from "viem";
 import { blockAtOrBefore } from "../chain/blocktime.js";
 import { type Db, getCursor } from "../db/db.js";
-import { lastSqrtPriceAt, V4_CURSOR } from "../indexer/v4.js";
+import { averageSqrtPrice, lastSqrtPriceAt, V4_CURSOR } from "../indexer/v4.js";
 
 export type Outcome = "1" | "0" | "VOID" | "UNRESOLVABLE";
 
@@ -29,8 +29,8 @@ export interface ResolveReport {
 /** Resolves the questions whose deadline+horizon has passed on the data chain. */
 export async function resolveDue(db: Db, data: PublicClient, v4StartBlock: bigint): Promise<ResolveReport> {
   const now = Number((await data.getBlock({ blockTag: "latest" })).timestamp);
-  const due = await db.query<{ id: string; pool_id: string; deadline: string; horizon: number }>(
-    `SELECT id, pool_id, deadline, horizon FROM questions
+  const due = await db.query<{ id: string; pool_id: string; deadline: string; horizon: number; json: string }>(
+    `SELECT id, pool_id, deadline, horizon, json FROM questions
       WHERE status = 'OPEN' AND outcome IS NULL AND deadline + horizon <= $1
       ORDER BY deadline, id`,
     [now],
@@ -59,6 +59,17 @@ export async function resolveDue(db: Db, data: PublicClient, v4StartBlock: bigin
     } else {
       before = await lastSqrtPriceAt(db, q.pool_id, b0);
       after = await lastSqrtPriceAt(db, q.pool_id, b1);
+      // Each question is resolved by the rule it committed to: v1 = last swap, v2 = window average.
+      const committed = JSON.parse(q.json) as { v?: string; window?: string };
+      if (committed.v === "2" && before && after) {
+        const w = Number(committed.window);
+        const s0 = await blockAt(deadline - w);
+        const s1 = await blockAt(deadline + q.horizon - w);
+        const avg0 = s0 === null ? null : await averageSqrtPrice(db, q.pool_id, s0, b0);
+        const avg1 = s1 === null ? null : await averageSqrtPrice(db, q.pool_id, s1, b1);
+        before = avg0 === null ? null : { sqrtPriceX96: avg0, block: before.block };
+        after = avg1 === null ? null : { sqrtPriceX96: avg1, block: after.block };
+      }
       outcome = decide(before, after, b0);
     }
     await db.query(

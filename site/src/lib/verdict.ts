@@ -16,11 +16,11 @@ export function questionId(json: string): string {
 
 // Type A rule, verbatim from engine/src/questions/open.ts (RULE_A).
 const RULE_A =
-  "1 if the token's ETH price at the last Swap of the pool at or before deadline+horizon is strictly higher than at the last Swap at or before deadline; 0 otherwise; VOID if the pool has no Swap between the two.";
+  "1 if the token's ETH price, time-weighted over the `window` seconds ending at deadline+horizon, is strictly higher than time-weighted over the `window` seconds ending at deadline; 0 otherwise; VOID if the pool has no Swap between deadline and deadline+horizon.";
 
 // Sample question: the fields are the engine's real ones, the addresses are not. The site says so.
 export const SAMPLE: Canonical = {
-  v: "1",
+  v: "2",
   kind: "A_PRICE_UP",
   dataChainId: "4663",
   ledgerChainId: "4663",
@@ -28,6 +28,7 @@ export const SAMPLE: Canonical = {
   epoch: "12",
   deadline: "1790604000",
   horizon: "21600",
+  window: "600",
   token: "0x00000000000000000000000000000000005a1d17",
   pool: "0x00000000000000000000000000000000000000000000000000000000000beef0",
   model: "jev",

@@ -20,8 +20,13 @@ export const LEDGER_ABI = parseAbi([
 export const KIND_A = "A_PRICE_UP";
 // Until 30 questions are resolved the type-A baseline is not measured (spec §3), and the JSON says so.
 const BASELINE_A = 0.5;
+/** Seconds over which the reference price is averaged, at the deadline and at deadline+horizon. */
+export const REFERENCE_WINDOW_SEC = 600;
+// v2 (22/09): an average, not the last swap. With the last swap, whoever had called could move the
+// price in the very block of the deadline, when no one can call any more; averaging over 10 minutes
+// makes that cost ten minutes of holding the price, not one swap.
 const RULE_A =
-  "1 if the token's ETH price at the last Swap of the pool at or before deadline+horizon is strictly higher than at the last Swap at or before deadline; 0 otherwise; VOID if the pool has no Swap between the two.";
+  "1 if the token's ETH price, time-weighted over the `window` seconds ending at deadline+horizon, is strictly higher than time-weighted over the `window` seconds ending at deadline; 0 otherwise; VOID if the pool has no Swap between deadline and deadline+horizon.";
 
 export type OpenResult =
   | { state: "OPENED"; epoch: number; deadline: number; ids: Hex[]; tx: Hex; block: bigint }
@@ -126,7 +131,7 @@ export async function openBatch(d: OpenDeps): Promise<OpenResult> {
     }
     const p = v.p;
     const json = canonicalJson({
-      v: "1",
+      v: "2",
       kind: KIND_A,
       dataChainId: String(d.dataChainId),
       ledgerChainId: String(ledgerChainId),
@@ -134,6 +139,7 @@ export async function openBatch(d: OpenDeps): Promise<OpenResult> {
       epoch: String(plan.epoch),
       deadline: String(plan.deadline),
       horizon: String(cfg.horizonSec),
+      window: String(REFERENCE_WINDOW_SEC),
       token: c.token,
       pool: c.poolId,
       model: v.model ?? model.id,

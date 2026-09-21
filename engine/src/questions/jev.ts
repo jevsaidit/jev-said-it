@@ -16,7 +16,7 @@ export interface JevOptions {
 }
 
 const INSTRUCTIONS =
-  "Will this token's ETH price, taken from the last swap in its pool, be strictly higher six hours after the call deadline than at the call deadline?";
+  "Will this token's ETH price, averaged over the ten minutes before each instant, be strictly higher six hours after the call deadline than at the call deadline?";
 
 export function jevModel(o: JevOptions): VerdictModel {
   const base = (o.baseUrl ?? "https://api.typesafe.ai").replace(/\/+$/, "");

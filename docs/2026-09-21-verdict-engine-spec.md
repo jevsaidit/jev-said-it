@@ -64,13 +64,16 @@ will have tokens only after the first `processSwap`. This is the room that makes
 
 > *"Will $X at the close of the horizon be above the price at the close of the calls?"*
 
-- **Candidates:** Pons tokens graduated in the last 48h, with at least N swaps in the last hour (N to
-  be tuned on day 1, so as not to ask about dead pools, whose price does not move).
-- **Reference:** `sqrtPriceX96` of the last `Swap` event on the pool **before or at the block
-  where the calls close**. It is read from the logs, not from state: the node prunes historical state after
-  about 10 minutes, the logs it does not (runbook §5.7).
-- **Outcome:** same method at block `deadline + HORIZON`. `1` if the price is strictly
-  above, `0` if it is below or equal.
+- **Candidates:** Pons tokens graduated in the last 48h, with at least 10 swaps in the last hour and
+  60 over the last 6h (22/09: a one-hour burst on a dead pool gave VOIDs on testnet).
+- **Reference (rule v2, 22/09):** the time-weighted average of `sqrtPriceX96` over the 10 minutes
+  (`window` = 600 s, committed in the question) ending at the block where the calls close. v1 used the
+  last swap, and whoever had called could push the price in the deadline block, when nobody can call
+  any more: an average makes that cost ten minutes of holding the price. It is read from the logs, not
+  from state: the node prunes historical state after about 10 minutes, the logs it does not (runbook §5.7).
+- **Outcome:** same average over the 10 minutes ending at `deadline + HORIZON`. `1` if the price is
+  strictly above, `0` if it is below or equal, `VOID` if no swap happened between the two instants.
+  Each question is resolved by the rule version it committed to.
 - **Horizon:** 6h, so that each epoch resolves the questions of the previous epoch.
 - **Base rate: not yet measured.** Our corpus covers the curves, not the v4 pools after
   graduation. Until 30 questions are resolved the declared baseline is `0.5`, with the label
