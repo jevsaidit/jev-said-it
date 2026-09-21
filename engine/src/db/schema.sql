@@ -111,3 +111,20 @@ CREATE TABLE IF NOT EXISTS treasury_ops (
   at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS treasury_ops_epoch ON treasury_ops (epoch, kind);
+
+-- The announcer: one row per (event, channel), written BEFORE sending, so an event is posted at
+-- most once per channel even across restarts. status: pending | sent | failed | capped | refused
+CREATE TABLE IF NOT EXISTS announcements (
+  event_key  TEXT NOT NULL,
+  channel    TEXT NOT NULL,
+  status     TEXT NOT NULL,
+  text       TEXT NOT NULL,
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  error      TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  sent_at    TIMESTAMPTZ,
+  PRIMARY KEY (event_key, channel)
+);
+
+-- When the epoch's root went on-chain: claims open CLAIM_DELAY (12h) after it.
+ALTER TABLE epochs ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;

@@ -11,7 +11,28 @@ export function connect(databaseUrl: string): Db {
   return pool;
 }
 
+const ENGINE_TABLES = new Set([
+  "cursors", "transfers", "pools", "swaps", "questions", "calls", "epochs", "treasury_ops", "announcements",
+]);
+
+/**
+ * The engine needs a database of its own. A database that already holds other tables is someone
+ * else's, and migrating into it would add the engine's tables to it (it happened on 2026-09-21: a
+ * DATABASE_URL loaded from another file pointed a test run at another project's database). Refuse
+ * before writing anything.
+ */
+export async function assertEngineDatabase(db: Db): Promise<void> {
+  const r = await db.query<{ table_name: string }>("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'");
+  const foreign = r.rows.map((x) => x.table_name).filter((t) => !ENGINE_TABLES.has(t));
+  if (foreign.length) {
+    throw new Error(
+      `refusing to migrate: this database has ${foreign.length} tables that are not the engine's (${foreign.slice(0, 3).join(", ")}…). The engine needs its own database.`,
+    );
+  }
+}
+
 export async function migrate(db: Db): Promise<void> {
+  await assertEngineDatabase(db);
   const sql = readFileSync(new URL("./schema.sql", import.meta.url), "utf8");
   await db.query(sql);
 }

@@ -1,4 +1,4 @@
-import Image from "next/image";
+import type { CSSProperties } from "react";
 import { LiveFeed } from "@/components/LiveFeed";
 import { Receipt } from "@/components/Receipt";
 import { CHAIN, FEE_SPLIT, LEDGER, LINKS, RULES, SITE_URL, TICKER, TOKEN_ADDRESS } from "@/lib/site";
@@ -55,6 +55,16 @@ const WONT = [
   "Turn “couldn't look” into an outcome",
 ];
 
+// Pump candles for the hero background: [x, open, close, high, low] on a 300x60 grid, rising to the right.
+const CANDLES: Array<[number, number, number, number, number]> = [
+  [120, 50, 47, 45, 52], [126, 47, 49, 44, 51], [132, 49, 44, 42, 50], [138, 44, 45, 41, 47], [144, 45, 40, 38, 46],
+  [150, 40, 41, 37, 43], [156, 41, 36, 33, 42], [162, 36, 38, 34, 40], [168, 38, 31, 29, 39], [174, 31, 33, 29, 35],
+  [180, 33, 27, 24, 34], [186, 27, 28, 25, 31], [192, 28, 22, 19, 29], [198, 22, 24, 20, 26], [204, 24, 17, 14, 25],
+  [210, 17, 19, 15, 21], [216, 19, 12, 9, 20], [222, 12, 14, 10, 16], [228, 14, 8, 5, 15],
+];
+// Coins around the mascot, in mascot pixels from its top-left corner.
+const COINS: Array<[number, number]> = [[-9, 4], [-4, 11], [43, 2], [47, 12], [-7, 27], [45, 30]];
+
 export default function Home() {
   return (
     <>
@@ -65,7 +75,8 @@ export default function Home() {
       <header className="nav">
         <div className="wrap nav__row">
           <a className="brand" href="#top" aria-label="Jev Said It, top of page">
-            <Image src="/mascot.png" alt="" width={36} height={36} priority />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="brand__pfp" src="/pfp-laser.png" alt="" width={40} height={40} />
             <span>jev said it</span>
           </a>
           <nav aria-label="Sections">
@@ -95,10 +106,19 @@ export default function Home() {
 
       <main id="main">
         <section className="hero" id="top">
+          <div className="hero__rays" aria-hidden />
+          <svg className="hero__candles" viewBox="0 0 300 60" shapeRendering="crispEdges" aria-hidden>
+            {CANDLES.map(([x, o, c, hi, lo], i) => (
+              <g key={i} className={c < o ? "up" : "down"}>
+                <rect x={x + 1} y={hi} width="1" height={lo - hi} />
+                <rect x={x} y={Math.min(o, c)} width="3" height={Math.max(1, Math.abs(o - c))} />
+              </g>
+            ))}
+          </svg>
           <div className="wrap hero__grid">
-            <div>
-              <p className="eyebrow">
-                {T} · {CHAIN.name} · a new epoch every {LEDGER.epochHours} hours
+            <div className="hero__copy">
+              <p className="hero__where">
+                <span className="plate">{T}</span> on {CHAIN.name}. New questions every {LEDGER.epochHours} hours.
               </p>
               <h1 className="hero__title">
                 Jev
@@ -142,15 +162,20 @@ export default function Home() {
               )}
             </div>
 
-            <div className="hero__coin">
-              <Image
-                src="/mascot.png"
-                alt={`The ${T} mascot: a pixel-art character in a black cap, deal-with-it sunglasses and a gold chain with a check-mark medallion`}
-                width={640}
-                height={640}
-                priority
-                sizes="(max-width: 820px) 62vw, 440px"
+            <div className="hero__mascot">
+              <p className="bubble">So I aped.</p>
+              {/* 40x40 native sprite, scaled by whole numbers in CSS: every pixel stays one size */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                className="sprite"
+                src="/mascot-laser.png"
+                width={40}
+                height={40}
+                alt={`The ${T} mascot: a pixel-art character with laser eyes, a backwards cap, a huge grin and a gold chain with a dollar coin`}
               />
+              {COINS.map(([x, y], i) => (
+                <span key={i} className="coin" style={{ "--cx": x, "--cy": y } as CSSProperties} aria-hidden />
+              ))}
             </div>
           </div>
         </section>

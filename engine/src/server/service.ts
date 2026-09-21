@@ -11,6 +11,9 @@ import { resolveDue } from "../resolve/resolve.js";
 import { closeEpoch } from "../score/epoch.js";
 import { calibration, claimFor, epochView, leaderboard, questionJson, treasuryOps } from "./feed.js";
 import { runTreasury, type TreasuryConfig } from "../treasury/treasury.js";
+import { announce } from "../announcer/announcer.js";
+import { makeSender } from "../announcer/channels.js";
+import type { AnnounceEnv } from "../config.js";
 
 type TaskState = { state: string; at: string; detail?: unknown };
 
@@ -23,6 +26,7 @@ export interface ServiceDeps {
   rcfg: RewardsConfig | null; // null = no rewards
   model: VerdictModel | null; // null = no model: no questions are opened, and this is declared
   treasury: TreasuryConfig | null; // null = the engine leaves the fees alone
+  announcer: AnnounceEnv | null; // null = silent
   port: number;
   host: string;
   pollMs: number;
@@ -112,6 +116,17 @@ export async function serve(d: ServiceDeps): Promise<void> {
           return { state: "IDLE" };
         });
       }
+      if (d.announcer) {
+        const an = d.announcer;
+        const seenAgo = lastSeenAt ? (Date.now() - lastSeenAt) / 1000 : Infinity;
+        // A blind engine stays silent: announcing from stale data would be announcing something false.
+        if (seenAgo > 120) mark("announce", "WAITING", "engine not seeing the chain: silent");
+        else
+          await task("announce", async () => {
+            const r = await announce(d.db, makeSender(an.mode, an), { site: an.site, xDailyCap: an.xDailyCap, now: Math.floor(Date.now() / 1000) });
+            return { state: r.failed || r.refused ? "PARTIAL" : r.sent ? "OK" : "IDLE", detail: r };
+          });
+      } else mark("announce", "DISABLED", "ANNOUNCE_MODE off");
       // Railway's healthcheck only applies at deploy: afterwards, nobody restarts a blind engine.
       // So it exits on its own, and the restart policy brings it back up; if it keeps falling, Railway
       // marks the deploy as crashed, which is a visible signal. A live, blind process would not be.

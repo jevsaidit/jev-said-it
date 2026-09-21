@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     description,
     url: SITE_URL,
     siteName: "Jev Said It",
-    images: [{ url: "/brand/og-1200x630.png", width: 1200, height: 630, alt: "Jev Said It: a verdict receipt stamped MATCH, next to the pixel-art mascot" }],
+    images: [{ url: "/brand/og-1200x630.png", width: 1200, height: 630, alt: "Jev Said It: the pixel-art mascot with laser eyes says \"so I aped\", over pumping green candles" }],
     type: "website",
   },
   twitter: { card: "summary_large_image", site: "@jevsaidit", title: "Jev Said It", description, images: ["/brand/og-1200x630.png"] },

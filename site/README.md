@@ -94,10 +94,17 @@ service's **root directory**.
 
 ## Design
 
-- Colors taken from the logo: Robinhood green `#3DF07A`, ring `#0E2A17`, chain gold `#F2C230`,
-  face pink `#F59A8F` for disagreement. The background is green-black `#07120B`, not black.
-- Type: Pixelify Sans (headings, like the logo), Atkinson Hyperlegible Next (body), Martian Mono
-  (hashes and data).
-- The only light element on the page is the **receipt**: it's the object the project promises.
-- Mobile down to 360px, visible focus, `prefers-reduced-motion` respected, the receipt is visible
-  even without JavaScript.
+The site follows the X profile: the laser-eyes pfp and the degen banner (`brand/degen*.py`).
+
+- **The hero is the banner, alive.** Pixel rays open from the mascot, green candles pump along the
+  bottom, gold coins float around it, and it says "So I aped." The one moment of motion on the page:
+  on load the lasers fire out of its eyes and cross the whole page, behind the title's gold "IT."
+  With `prefers-reduced-motion` they are simply there.
+- **One pixel size.** The mascot is served at its native 40x40 (`public/mascot-laser.png`) and scaled
+  by CSS with `image-rendering: pixelated` in whole numbers (`--mpx`: 10px on desktop, 6px on
+  phones). Lasers, coins and the bubble are measured in the same unit, so they stay on its grid.
+- **Palette from the art:** hood green `#3DF07A`, the banner's two ray greens `#09190F` / `#0E2817`,
+  gold `#F2C230`, laser red `#FF2828`, paper `#F3F7EA`. Hard offset shadows, never soft ones.
+- **Type:** Pixelify Sans for headings (as in the art), Atkinson Hyperlegible Next for text, Martian
+  Mono only for hashes and data.
+- **The receipt stays the page's one light object**: it is what the project promises.

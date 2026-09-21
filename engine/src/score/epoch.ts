@@ -159,6 +159,6 @@ export async function closeEpoch(d: EpochDeps, epoch: number, publish: boolean):
   ) {
     return { state: "FAILED", reason: `tx ${tx}: EpochRootSet missing or different from what was sent` };
   }
-  await db.query("UPDATE epochs SET state = 'PUBLISHED', tx_hash = $2 WHERE epoch = $1", [epoch, tx]);
+  await db.query("UPDATE epochs SET state = 'PUBLISHED', tx_hash = $2, published_at = now() WHERE epoch = $1", [epoch, tx]);
   return { state: "PUBLISHED", root, budget: total, tx };
 }

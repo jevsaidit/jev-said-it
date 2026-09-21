@@ -141,3 +141,27 @@ export function loadTreasuryEnv(): TreasuryEnv | null {
     slippageBps: slippage,
   };
 }
+
+export interface AnnounceEnv {
+  mode: "test" | "live";
+  tgToken: string;
+  tgChannel?: string;
+  tgTestChat?: string;
+  site: string;
+  xDailyCap: number;
+}
+
+/** Null when ANNOUNCE_MODE is off (the default): the engine stays silent. */
+export function loadAnnounceEnv(): AnnounceEnv | null {
+  const mode = process.env.ANNOUNCE_MODE || "off";
+  if (!["off", "test", "live"].includes(mode)) throw new Error(`ANNOUNCE_MODE must be off, test or live: ${mode}`);
+  if (mode === "off") return null;
+  return {
+    mode: mode as "test" | "live",
+    tgToken: need("TELEGRAM_BOT_TOKEN"),
+    tgChannel: process.env.TELEGRAM_CHANNEL_ID || undefined,
+    tgTestChat: process.env.TELEGRAM_TEST_CHAT_ID || undefined,
+    site: process.env.PUBLIC_SITE_URL || "https://jevsaidit.com",
+    xDailyCap: num("X_DAILY_CAP", 6),
+  };
+}

@@ -1,8 +1,10 @@
 import { encodePacked, keccak256, parseAbi, type Address, type Hex } from "viem";
 import { makeClient } from "../chain/client.js";
 import { writeFileSync } from "node:fs";
-import { loadConfig, loadLedgerConfig, loadRewardsConfig, loadTreasuryEnv, POOL_MANAGER } from "../config.js";
+import { loadAnnounceEnv, loadConfig, loadLedgerConfig, loadRewardsConfig, loadTreasuryEnv, POOL_MANAGER } from "../config.js";
 import { runTreasury, type TreasuryConfig } from "../treasury/treasury.js";
+import { announce } from "../announcer/announcer.js";
+import { makeSender } from "../announcer/channels.js";
 import { resolveDue } from "../resolve/resolve.js";
 import { closeEpoch } from "../score/epoch.js";
 import { buildTree } from "../score/merkle.js";
@@ -183,6 +185,7 @@ async function main(): Promise<number> {
         rcfg,
         model,
         treasury: lcfg ? treasuryFromEnv() : null,
+        announcer: loadAnnounceEnv(),
         port: Number(process.env.PORT ?? 8080),
         // Railway wants listening on all interfaces; locally, pass HOST=127.0.0.1.
         host: process.env.HOST ?? "0.0.0.0",
@@ -201,6 +204,20 @@ async function main(): Promise<number> {
       const out = await runTreasury(db, ledger, t, genesis);
       console.log(JSON.stringify(out));
       return out.state === "FAILED" ? EXIT_WRONG : EXIT_OK;
+    }
+    case "announce":
+    case "announce-pin": {
+      const an = loadAnnounceEnv();
+      if (!an) throw new Error("ANNOUNCE_MODE is off");
+      await migrate(db);
+      const now = Math.floor(Date.now() / 1000);
+      const events =
+        cmd === "announce-pin"
+          ? [{ event: { kind: "pin" as const, key: "pin:v1" }, channels: ["telegram", "x"] as Array<"telegram" | "x"> }]
+          : undefined;
+      const r = await announce(db, makeSender(an.mode, an), { site: an.site, xDailyCap: an.xDailyCap, now, events });
+      console.log(JSON.stringify(r));
+      return r.failed || r.refused ? EXIT_WRONG : EXIT_OK;
     }
     case "resolve": {
       const out = await resolveDue(db, client, cfg.v4StartBlock);
@@ -240,7 +257,7 @@ async function main(): Promise<number> {
     case "verify-price":
       return verifyPrice(args[0]);
     default:
-      console.log("commands: migrate | serve | treasury | index [--loop] | open-questions --stub | resolve | close-epoch <n> [--publish] | merkle-fixture <out> | verify-balances [n] | verify-price [poolId]");
+      console.log("commands: migrate | serve | treasury | announce | announce-pin | index [--loop] | open-questions --stub | resolve | close-epoch <n> [--publish] | merkle-fixture <out> | verify-balances [n] | verify-price [poolId]");
       return EXIT_BLIND;
   }
 }

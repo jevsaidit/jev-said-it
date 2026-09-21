@@ -12,6 +12,7 @@ Not affiliated with TypeSafe AI.
   the index as context;
 - block 4: outcome resolution, scores, Merkle root and `setEpochRoot`;
 - treasury: collects the Pons escrow and runs one buyback per epoch (`src/treasury/`), proven on a mainnet fork (`scripts/e2e-treasury-fork.sh`, 11/11);
+- announcer: the game's public voice on Telegram (and later X), in the degen voice of the pfp; every post is refused if it holds a number that is not in the data (`src/announcer/`, `ANNOUNCE_MODE=test` sends everything to one private chat);
 - block 5: the service (`serve`), i.e. loop, `/health`, public feed, Dockerfile and `railway.json`.
 
 The model is Jev via the TypeSafe API (`MODEL=jev`). The placeholder model (`MODEL=stub`) exists only

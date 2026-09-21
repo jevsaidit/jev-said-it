@@ -26,3 +26,15 @@ so a variant (expression, accessory) is a change of a few lines.
 
 In the banner the token address is deliberately fake (`0x0000…1d17`, like the site's sample
 receipt): a real address from another project would look like an endorsement.
+
+## Degen set (the one on X)
+
+| file | use |
+|---|---|
+| `degen-pfp-400.png` | X avatar, laser version (40x40 x10) |
+| `degen-pfp-calm-400.png` | same character without lasers |
+| `degen-mascot-1000.png` | laser mascot without background, for posts |
+| `degen-banner-1500x500.png` | X header ("SO I APED.") |
+| `site/public/mascot-laser.png` | the native 40x40 sprite the site scales in CSS |
+
+`python3 degen.py && python3 degen.py --no-lasers && python3 degen_banner.py`

@@ -1,0 +1,73 @@
+import { describe, expect, it } from "vitest";
+import { CONSTANTS, Fmt, guard, render, SIGNATURE, type AnnounceEvent } from "../src/announcer/soul.js";
+
+const q = (o: Partial<{ id: string; token: string; symbol: string | null; p: string; outcome: string | null }> = {}) => ({
+  id: "0x9f3a" + "0".repeat(60),
+  token: "0x3cedefe814e47b297743c82c20f947053ee667dd",
+  symbol: "XYZ",
+  p: "0.7123",
+  outcome: null,
+  ...o,
+});
+const site = "https://jevsaidit.com";
+
+describe("render", () => {
+  const events: AnnounceEvent[] = [
+    { kind: "batch_opened", key: "open:0xa", epoch: 42, deadline: 1790019311, questions: [q(), q({ symbol: "ABC", p: "0.3100" })] },
+    { kind: "closing_soon", key: "closing:0xa", epoch: 42, deadline: 1790019311, count: 10 },
+    { kind: "outcome", key: "outcome:0x1", question: q({ outcome: "1" }) },
+    { kind: "outcome", key: "outcome:0x2", question: q({ outcome: "0" }) },
+    { kind: "epoch_settled", key: "settled:41", epoch: 41, winners: 3, top: "0x7a3f00000000000000000000000000000000fc21", claimsAt: 1790050000 },
+    { kind: "claims_open", key: "claims:41", epoch: 41 },
+    { kind: "swap", key: "swap:0x5b", ethIn: "400000000000000000", burned: "12345678000000000000000000", tx: "0x5b1e" + "0".repeat(60) },
+    { kind: "pin", key: "pin:v1" },
+  ];
+  it("every post ends with the signature and passes its own guard", () => {
+    for (const e of events) {
+      const r = render(e, site);
+      for (const text of [r.telegram, r.x].filter(Boolean) as string[]) {
+        expect(text.endsWith(SIGNATURE)).toBe(true);
+        expect(guard(text, r.fmt)).toEqual({ ok: true });
+      }
+    }
+  });
+  it("X posts fit in 280 characters", () => {
+    for (const e of events) {
+      const x = render(e, site).x;
+      if (x) expect(x.length).toBeLessThanOrEqual(280);
+    }
+  });
+  it("a wrong call is said out loud", () => {
+    const r = render({ kind: "outcome", key: "outcome:0x2", question: q({ p: "0.6400", outcome: "0" }) }, site);
+    expect(r.telegram).toMatch(/wrong|lied|cooked/);
+    expect(r.telegram).toContain("0.64");
+  });
+  it("the same event always renders the same text, and different events vary", () => {
+    const e: AnnounceEvent = { kind: "outcome", key: "outcome:0x2", question: q({ outcome: "0" }) };
+    expect(render(e, site).telegram).toBe(render(e, site).telegram);
+    const texts = new Set(Array.from({ length: 12 }, (_, i) => render({ ...e, key: `outcome:0x${i}` }, site).telegram));
+    expect(texts.size).toBeGreaterThan(2);
+  });
+  it("$JEVSAIDIT appears only in posts about the token", () => {
+    expect(render(events[0]!, site).telegram).not.toContain("$JEVSAIDIT");
+    expect(render(events[6]!, site).telegram).toContain("$JEVSAIDIT");
+  });
+});
+
+describe("guard", () => {
+  it("refuses a number that did not come from the data", () => {
+    const f = new Fmt();
+    const text = `jev said ${f.p("0.7123")}. up 300% soon.\n\n${SIGNATURE}`;
+    expect(guard(text, f).ok).toBe(false);
+  });
+  it("accepts formatted data, declared constants, hashes and links", () => {
+    const f = new Fmt();
+    const text = `jev said ${f.p("0.7123")}. ${CONSTANTS[0]} = 1 call.\ntx: 0x5b1e00\n${"https://jevsaidit.com/api/feed/q/0x9f.json"}\n\n${SIGNATURE}`;
+    expect(guard(text, f)).toEqual({ ok: true });
+  });
+  it("refuses shilling our own token", () => {
+    const f = new Fmt();
+    expect(guard(`buy $JEVSAIDIT now\n\n${SIGNATURE}`, f).ok).toBe(false);
+    expect(guard(`$JEVSAIDIT to the moon, 100x\n\n${SIGNATURE}`, f).ok).toBe(false);
+  });
+});

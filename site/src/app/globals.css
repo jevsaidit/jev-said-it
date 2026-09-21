@@ -12,6 +12,11 @@
   --mint-dim: #a9c4a8;
   --gold: #f2c230;       /* the chain */
   --coral: #f59a8f;      /* disagreement, error */
+  --laser: #ff2828;      /* the mascot's laser eyes, same red as the pfp and the banner */
+  --laser-core: #fffac8;
+  --ray-a: #09190f;      /* the banner's two ray greens */
+  --ray-b: #0e2817;
+  --shadow: #030805;     /* hard offset shadows, like the banner's drop shadows */
   --paper: #f3f7ea;      /* the receipt */
   --paper-ink: #10200f;
 
@@ -220,15 +225,65 @@ code,
 /* ---------- hero ---------- */
 
 .hero {
+  /* the mascot's pixel: the sprite is 40x40 and everything in the hero is measured in it */
+  --mpx: 10px;
+  --rx: 78%;
+  --ry: 46%;
   position: relative;
-  padding-block: clamp(48px, 9vw, 120px) clamp(56px, 8vw, 110px);
+  isolation: isolate;
+  padding-block: clamp(48px, 8vw, 104px) clamp(72px, 9vw, 120px);
   overflow: hidden;
+  background: var(--ray-a);
+}
+.hero__rays {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  /* hard stops: rays with edges, like the banner, never a soft glow */
+  background: repeating-conic-gradient(from 3deg at var(--rx) var(--ry), var(--ray-b) 0 12deg, var(--ray-a) 12deg 24deg);
+}
+.hero__candles {
+  position: absolute;
+  inset: auto 0 0 0;
+  width: 100%;
+  height: auto;
+  z-index: -1;
+  opacity: 0.55;
+}
+.hero__candles .up {
+  fill: var(--hood-dim);
+}
+.hero__candles .down {
+  fill: #b83a3a;
 }
 .hero__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
   gap: clamp(24px, 5vw, 64px);
   align-items: center;
+}
+.hero__copy {
+  position: relative;
+  z-index: 2;
+}
+.hero__where {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.75rem;
+  margin: 0 0 1.5rem;
+  color: var(--mint-dim);
+}
+/* the ticker plate from the banner: green, ink, hard shadow */
+.plate {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--step-1);
+  color: var(--ink);
+  background: var(--hood);
+  padding: 0.1em 0.45em 0.18em;
+  box-shadow: var(--px) var(--px) 0 var(--shadow);
 }
 .hero__title {
   font-family: var(--font-display);
@@ -239,12 +294,14 @@ code,
   margin: 0 0 2rem;
   color: var(--mint);
   text-transform: uppercase;
+  /* the banner's title: letters with a hard drop shadow one pixel down-right */
+  text-shadow: calc(var(--px) * 1.5) calc(var(--px) * 1.5) 0 var(--shadow);
 }
 .hero__title .said {
   color: var(--hood);
   display: block;
 }
-/* the "it." line is the stamp: same tilt as the stamp on the receipt */
+/* the "it." line is the gold block of the banner and the stamp of the receipt */
 .hero__title .it {
   display: inline-block;
   color: var(--ink);
@@ -252,7 +309,8 @@ code,
   padding: 0 0.12em 0.04em;
   transform: rotate(-4deg);
   margin-top: 0.08em;
-  box-shadow: var(--px) var(--px) 0 var(--felt);
+  text-shadow: none;
+  box-shadow: calc(var(--px) * 2) calc(var(--px) * 2) 0 var(--shadow);
 }
 .hero__actions {
   display: flex;
@@ -260,19 +318,113 @@ code,
   gap: 0.75rem;
   margin-top: 2rem;
 }
-.hero__coin {
-  justify-self: center;
-  width: min(100%, 440px);
-  aspect-ratio: 1;
+.hero__mascot {
   position: relative;
+  justify-self: center;
+  width: calc(40 * var(--mpx));
+  height: calc(40 * var(--mpx));
+  z-index: 1;
 }
-.hero__coin img {
-  width: 100%;
-  height: auto;
-  border-radius: 50%;
+.sprite {
   display: block;
+  width: 100%;
+  height: 100%;
   image-rendering: pixelated;
-  filter: drop-shadow(0 0 60px color-mix(in srgb, var(--hood) 25%, transparent));
+}
+/* The lasers leave the sprite at its eye rows (16-18 of 40) and cross the whole page. */
+.hero__mascot::before,
+.hero__mascot::after {
+  content: "";
+  position: absolute;
+  top: calc(16 * var(--mpx));
+  height: calc(3 * var(--mpx));
+  width: 100vw;
+  background: linear-gradient(to bottom, var(--laser) 0 33.34%, var(--laser-core) 33.34% 66.67%, var(--laser) 66.67%);
+  box-shadow: 0 0 0 var(--mpx) color-mix(in srgb, var(--laser) 22%, transparent);
+  z-index: -1;
+}
+.hero__mascot::before {
+  right: 100%;
+  transform-origin: right center;
+}
+.hero__mascot::after {
+  left: 100%;
+  transform-origin: left center;
+}
+/* The one moment of motion on the page: the lasers fire once, on load. */
+@media (prefers-reduced-motion: no-preference) {
+  .hero__mascot::before,
+  .hero__mascot::after {
+    animation: fire 520ms steps(13) 250ms both;
+  }
+}
+@keyframes fire {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.bubble {
+  position: absolute;
+  right: calc(26 * var(--mpx));
+  top: calc(-7 * var(--mpx));
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: calc(2.6 * var(--mpx));
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--ink);
+  background: var(--paper);
+  padding: calc(1.1 * var(--mpx)) calc(1.6 * var(--mpx));
+  box-shadow: var(--mpx) var(--mpx) 0 var(--shadow);
+}
+.bubble::after {
+  content: "";
+  position: absolute;
+  right: calc(2 * var(--mpx));
+  bottom: calc(-2 * var(--mpx));
+  width: calc(2 * var(--mpx));
+  height: calc(2 * var(--mpx));
+  background: var(--paper);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+.coin {
+  position: absolute;
+  left: calc(var(--cx) * var(--mpx));
+  top: calc(var(--cy) * var(--mpx));
+  width: calc(3 * var(--mpx));
+  height: calc(3 * var(--mpx));
+  background: var(--gold);
+  box-shadow:
+    inset calc(-1 * var(--mpx)) calc(-1 * var(--mpx)) 0 #c4920e,
+    inset var(--mpx) var(--mpx) 0 #fff0a0;
+}
+.brand__pfp {
+  width: 40px;
+  height: 40px;
+  image-rendering: pixelated;
+  border-radius: 50%;
+}
+@media (max-width: 820px) {
+  .hero {
+    --mpx: 6px;
+    --rx: 50%;
+    --ry: 18%;
+  }
+  .hero__grid {
+    grid-template-columns: 1fr;
+  }
+  .hero__mascot {
+    order: -1;
+    margin-top: calc(6 * var(--mpx));
+  }
+  .bubble {
+    right: auto;
+    left: calc(-6 * var(--mpx));
+  }
 }
 .status {
   display: flex;
@@ -302,16 +454,6 @@ code,
   font-family: var(--font-data);
   word-break: break-all;
   color: var(--hood);
-}
-@media (max-width: 820px) {
-  .hero__grid {
-    grid-template-columns: 1fr;
-  }
-  .hero__coin {
-    order: -1;
-    width: min(62vw, 280px);
-    justify-self: start;
-  }
 }
 
 /* ---------- sections ---------- */
