@@ -9,7 +9,11 @@ import type { VerdictModel } from "../questions/model.js";
 import { LEDGER_ABI, openBatch } from "../questions/open.js";
 import { resolveDue } from "../resolve/resolve.js";
 import { closeEpoch } from "../score/epoch.js";
-import { calibration, claimFor, epochView, leaderboard, questionJson, treasuryOps } from "./feed.js";
+import { calibration, claimFor, epochView, holderView, leaderboard, questionJson, treasuryOps } from "./feed.js";
+import { blockAtOrBefore } from "../chain/blocktime.js";
+import { getCursor } from "../db/db.js";
+import { transferCursor } from "../indexer/transfers.js";
+import { EPOCH_LENGTH } from "../questions/epoch.js";
 import { runTreasury, type TreasuryConfig } from "../treasury/treasury.js";
 import { announce } from "../announcer/announcer.js";
 import { makeSender } from "../announcer/channels.js";
@@ -169,6 +173,26 @@ export async function serve(d: ServiceDeps): Promise<void> {
       const e = epochOf(now, genesis);
       return send(res, 200, jsonOut({ ...(await epochView(d.db, e, now)), genesis, now }));
     }
+    if (path === "/config") {
+      // What a wallet needs to play: the ledger's chain and the three addresses. Read from the
+      // engine's own configuration, so the site cannot point at a different contract than the one scored.
+      const chainId = ledger ? await ledger.getChainId() : null;
+      return send(res, 200, jsonOut({
+        chainId,
+        token: d.cfg.token,
+        callLedger: d.lcfg?.callLedger ?? null,
+        rewardsDistributor: d.rcfg?.rewardsDistributor ?? null,
+      }));
+    }
+    if ((m = path.match(/^\/holder\/(0x[0-9a-fA-F]{40})$/))) {
+      if (!d.lcfg || !ledger) return send(res, 404, jsonOut({ error: "CallLedger not configured" }));
+      const genesis = Number(await ledger.readContract({ address: d.lcfg.callLedger, abi: LEDGER_ABI, functionName: "genesis" }));
+      const now = Number((await ledger.getBlock({ blockTag: "latest" })).timestamp);
+      const epoch = epochOf(now, genesis);
+      const startBlock = await blockAtOrBefore(d.token, genesis + epoch * EPOCH_LENGTH);
+      const indexedBlock = await getCursor(d.db, transferCursor(d.cfg.token));
+      return send(res, 200, jsonOut(await holderView(d.db, { token: d.cfg.token, account: m[1]!, epoch, startBlock, indexedBlock })));
+    }
     if ((m = path.match(/^\/epochs\/(\d{1,6})$/))) return send(res, 200, jsonOut(await epochView(d.db, Number(m[1]))));
     if ((m = path.match(/^\/leaderboard\/(\d{1,6})$/))) {
       const l = await leaderboard(d.db, Number(m[1]));
@@ -180,7 +204,7 @@ export async function serve(d: ServiceDeps): Promise<void> {
     }
     if (path === "/calibration") return send(res, 200, jsonOut(await calibration(d.db)));
     if (path === "/treasury") return send(res, 200, jsonOut(await treasuryOps(d.db)));
-    return send(res, 404, jsonOut({ error: "not found", routes: ["/health", "/epochs/current", "/epochs/:n", "/q/:id.json", "/leaderboard/:n", "/claim/:n/:address", "/calibration", "/treasury"] }));
+    return send(res, 404, jsonOut({ error: "not found", routes: ["/health", "/config", "/holder/:address", "/epochs/current", "/epochs/:n", "/q/:id.json", "/leaderboard/:n", "/claim/:n/:address", "/calibration", "/treasury"] }));
   };
 
   const server = createServer((req, res) => {

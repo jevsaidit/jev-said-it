@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Atkinson_Hyperlegible_Next, Martian_Mono, Pixelify_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import { SITE_URL, TICKER } from "@/lib/site";
 import "./globals.css";
 
-const pixel = Pixelify_Sans({ subsets: ["latin"], weight: ["500", "700"], variable: "--font-pixel" });
-const body = Atkinson_Hyperlegible_Next({ subsets: ["latin"], weight: ["400", "500", "700"], variable: "--font-body" });
-const mono = Martian_Mono({ subsets: ["latin"], weight: ["400", "600"], variable: "--font-mono" });
+// Self-hosted (OFL, latin subset, variable weight): the build must not depend on reaching Google Fonts,
+// which failed two Railway builds out of four on 21/09.
+const pixel = localFont({ src: "./fonts/PixelifySans.woff2", weight: "400 700", variable: "--font-pixel", display: "swap" });
+const body = localFont({ src: "./fonts/AtkinsonHyperlegibleNext.woff2", weight: "200 800", variable: "--font-body", display: "swap" });
+const mono = localFont({ src: "./fonts/MartianMono.woff2", weight: "100 800", variable: "--font-mono", display: "swap" });
 
 const description =
   "Every 6 hours a model commits a probability on-chain before anyone answers. Holders agree or disagree. Calibrated calls get paid from trading fees. On Robinhood Chain.";

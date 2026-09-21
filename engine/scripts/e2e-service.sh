@@ -68,6 +68,10 @@ check "$(get /epochs/current | jq -r '.questions[0].status')" "OPEN" "status OPE
 ID=$(get /epochs/current | jq -r '.questions[0].id')
 check "$(cast keccak "$(get /q/$ID.json)")" "$ID" "keccak256 of /q/<id>.json = id: the commitment is verifiable from the feed"
 check "$(code -X POST $S/health) $(code $S/nope) $(code $S/q/0x$(printf '%064x' 0).json)" "405 404 404" "unknown methods and paths rejected"
+lc() { echo "$1" | tr A-F a-f; }
+check "$(get /config | jq -r '[.chainId, .callLedger, .rewardsDistributor, .token] | map(tostring) | join(",")' | tr A-F a-f)" "31337,$(lc $LED),$(lc $DIST),$(lc $TOK)" "/config: the chain and the contracts the engine scores"
+check "$(get /holder/$U1 | jq -r '[.balanceAtStart, .capacityAtStart, (.claims|length)] | join(",")')" "100000$E18,10,0" "/holder: U1 counted at epoch start, 100k tokens = 10 calls"
+check "$(get /holder/$(cast wallet address $(k 5)) | jq -r '[.balanceAtStart, .capacityAtStart] | join(",")')" "0,0" "/holder: a wallet with no tokens has no calls"
 
 echo "2. a holder answers, time passes, the service resolves and pays on its own"
 qid() { get /epochs/0 | jq -r --arg t "0x$(printf '%040x' $1)" '.questions[] | select(.token == $t) | .id'; }
@@ -87,6 +91,7 @@ AMT=$(get /claim/0/$U1 | jq -r .amount); PROOF=$(get /claim/0/$U1 | jq -c .proof
 warp 43300
 send $DIST 'claim(uint256,uint256,bytes32[])' 0 $AMT "$PROOF" --private-key $PK1
 check "$(cast call $DIST 'hasClaimed(uint256,address)(bool)' 0 $U1 --rpc-url $A)" true "U1 claims with the proof taken from the feed"
+check "$(get /holder/$U1 | jq -r '.claims | map("\(.epoch):\(.amount)") | join(",")')" "0:$AMT" "/holder lists the published reward the site offers to claim"
 
 echo "3. the chain disappears: /health stops saying 200, then the process exits to get restarted"
 kill $ANVIL; sleep 12

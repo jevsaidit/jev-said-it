@@ -2,7 +2,7 @@
 // The browser only talks to this domain: no CORS to open on the engine, and the engine's
 // URL changes with an environment variable, without rebuilding.
 
-const ALLOWED = /^(epochs\/(current|\d+)|q\/0x[0-9a-fA-F]{64}\.json|leaderboard\/\d+|calibration)$/;
+const ALLOWED = /^(epochs\/(current|\d+)|q\/0x[0-9a-fA-F]{64}\.json|leaderboard\/\d+|calibration|config|holder\/0x[0-9a-fA-F]{40})$/;
 
 export async function GET(_req: Request, ctx: { params: Promise<{ path: string[] }> }) {
   const base = process.env.ENGINE_FEED_URL?.trim().replace(/\/+$/, "");
@@ -19,7 +19,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ path: string[]
   try {
     const res = await fetch(`${base}/${rel}`, {
       headers: { accept: "application/json", "user-agent": "jevsaidit-site" },
-      next: { revalidate: 30 },
+      // A wallet's own view must be fresh right after it answers or claims; the rest can be 30s old.
+      next: { revalidate: rel.startsWith("holder/") ? 0 : 30 },
       signal: AbortSignal.timeout(8000),
     });
     const body = await res.text();

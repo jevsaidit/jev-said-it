@@ -1,5 +1,5 @@
-import type { Db } from "../db/db.js";
-import { P_SCALE, parseProb } from "../score/score.js";
+import { balanceAt, type Db } from "../db/db.js";
+import { MAX_CALLS_PER_EPOCH, P_SCALE, parseProb, TOKENS_PER_CALL } from "../score/score.js";
 
 // The public feed (spec §9.4). Everything that comes out of here is already public on-chain or
 // committed by an on-chain hash: the feed makes it readable, it adds no trust.
@@ -119,4 +119,41 @@ export async function treasuryOps(db: Db) {
     "SELECT epoch, kind, tx_hash, detail, at FROM treasury_ops ORDER BY id DESC LIMIT 200",
   );
   return r.rows.map((x) => ({ epoch: x.epoch, kind: x.kind, tx: x.tx_hash, at: x.at.toISOString(), ...JSON.parse(x.detail) }));
+}
+
+/**
+ * What the site's play panel needs about one wallet, in one call. The capacity that COUNTS is the one
+ * at the epoch's start block (spec §5.4): the contract accepts calls on the balance at call time,
+ * and the engine drops those beyond the start-of-epoch capacity when it scores. Three states: if the
+ * Transfer index has not reached the start block yet, the balance is `null`, never a guessed 0.
+ */
+export async function holderView(
+  db: Db,
+  args: { token: string; account: string; epoch: number; startBlock: bigint | null; indexedBlock: bigint | null },
+) {
+  const { token, account, epoch, startBlock, indexedBlock } = args;
+  const known = startBlock !== null && indexedBlock !== null && indexedBlock >= startBlock;
+  const balanceAtStart = known ? await balanceAt(db, token, account, startBlock) : null;
+  let capacityAtStart: bigint | null = null;
+  if (balanceAtStart !== null) {
+    capacityAtStart = balanceAtStart / TOKENS_PER_CALL;
+    if (capacityAtStart > MAX_CALLS_PER_EPOCH) capacityAtStart = MAX_CALLS_PER_EPOCH;
+  }
+  const r = await db.query<{ epoch: number; payload: string }>("SELECT epoch, payload FROM epochs WHERE state = 'PUBLISHED' ORDER BY epoch");
+  const claims = r.rows.flatMap((row) => {
+    const cs = (JSON.parse(row.payload) as { claims?: Array<{ account: string; amount: string; proof: string[] }> }).claims ?? [];
+    const c = cs.find((x) => x.account.toLowerCase() === account.toLowerCase());
+    return c ? [{ epoch: row.epoch, amount: c.amount, proof: c.proof }] : [];
+  });
+  return {
+    account: account.toLowerCase(),
+    epoch,
+    startBlock,
+    indexedBlock,
+    balanceAtStart, // null = not measurable yet (index behind the start block)
+    capacityAtStart,
+    tokensPerCall: TOKENS_PER_CALL,
+    maxCallsPerEpoch: MAX_CALLS_PER_EPOCH,
+    claims, // published rewards; whether each was already claimed is read on-chain (hasClaimed)
+  };
 }

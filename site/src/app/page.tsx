@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { LiveFeed } from "@/components/LiveFeed";
+import { Play } from "@/components/Play";
 import { Receipt } from "@/components/Receipt";
 import { CHAIN, FEE_SPLIT, LEDGER, LINKS, RULES, SITE_URL, TICKER, TOKEN_ADDRESS } from "@/lib/site";
 
@@ -95,6 +96,9 @@ export default function Home() {
               </li>
               <li>
                 <a href="#feed">Live feed</a>
+              </li>
+              <li>
+                <a href="#play">Play</a>
               </li>
             </ul>
           </nav>
@@ -305,6 +309,20 @@ skill = (b − y)² − brier`}</div>
                 <code>distribute()</code>. The keeper then buys {T} with the swap share, burns part of
                 it and sends the rest to the rewards distributor.
               </p>
+              <p>
+                Winners are paid in {T}, never in ETH. Once per epoch, at a time derived from a secret
+                so nobody can front-run it, {(FEE_SPLIT.find((f) => f.key === "rewards")!.bps + FEE_SPLIT.find((f) => f.key === "burn")!.bps) / 100}% of the fees
+                buy {T} on the open market. No wallet sits in between: the router buys and the
+                distributor holds.
+              </p>
+              <p>
+                Your calls are counted from the {T} you hold, so a prize is also next epoch&apos;s
+                capacity. Sell it and you play less.
+              </p>
+              <p className="muted">
+                The buy is only as big as the volume. Quiet weeks mean small buys and small prizes.
+                Nothing here promises a price.
+              </p>
               <p className="muted">
                 No transfer tax. Splits change only through a 24-hour timelock, and each change is an
                 on-chain event.
@@ -345,6 +363,27 @@ skill = (b − y)² − brier`}</div>
               is published every epoch, including the epochs it loses.
             </p>
             <LiveFeed ticker={TICKER} />
+          </div>
+        </section>
+
+        <section className="section" id="play" aria-labelledby="play-h">
+          <div className="wrap split">
+            <div className="prose">
+              <p className="eyebrow">Play</p>
+              <h2 className="h2" id="play-h">
+                Agree or disagree with Jev.
+              </h2>
+              <p>
+                Connect a browser wallet on {CHAIN.name}. Every {LEDGER.tokensPerCall.toLocaleString("en-US")} {T} you
+                held when the epoch started is one call, up to {LEDGER.maxCallsPerEpoch}. All your calls go out in one
+                transaction: you pay gas, you stake nothing.
+              </p>
+              <p className="muted">
+                The contract refuses a call beyond your balance, and the engine drops any call beyond what you held at
+                the epoch&apos;s start. Buying, calling and selling in the same epoch does not count.
+              </p>
+            </div>
+            <Play ticker={TICKER} />
           </div>
         </section>
 
