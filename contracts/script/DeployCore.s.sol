@@ -76,7 +76,11 @@ contract DeployCore is Script {
         proposers[0] = c.proposer;
         address[] memory executors = new address[](1);
         executors[0] = address(0);
-        TimelockController timelock = new TimelockController(24 hours, proposers, executors, address(0));
+        // Born with delay 0 ON PURPOSE, and set to 24h by the handover batch itself (runbook §4.7):
+        // acceptOwnership x3 + updateDelay(24h) in one scheduleBatch/executeBatch from the proposer,
+        // minutes after this script. With a 24h delay from birth the deploy key stayed owner of
+        // everything for 24h, and the fees had to wait: every epoch of the first day went unpaid.
+        TimelockController timelock = new TimelockController(0, proposers, executors, address(0));
 
         // deployer is temporary owner for configuration, then hands over to the timelock
         FeeRouter router = new FeeRouter(c.token, c.deployer, c.computeWallet, c.opsWallet, c.teamWallet, c.keeper);
@@ -106,7 +110,9 @@ contract DeployCore is Script {
         console2.log("  cast send <ADAPTER> 'setRouter(address)' <FEEROUTER>");
         console2.log("  <ADAPTER>   =", c.adapter);
         console2.log("  <FEEROUTER> =", address(router));
-        console2.log("Then: the timelock must call acceptOwnership() on router, dist, ledger (Ownable2Step)");
+        console2.log("Then, RIGHT AWAY, the handover batch from the proposer (runbook 4.7): acceptOwnership() on");
+        console2.log("  router, dist, ledger + updateDelay(86400) on the timelock, scheduled with delay 0 and executed.");
+        console2.log("  Check getMinDelay() == 86400 afterwards: until then the timelock has NO delay.");
         console2.log("UniV4SwapAdapter is plain Ownable: its transferOwnership is already effective");
     }
 }

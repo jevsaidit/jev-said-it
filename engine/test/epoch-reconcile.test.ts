@@ -2,6 +2,7 @@
 // the "db" are in-memory fakes that answer only the SQL / RPC the code under test actually issues.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
+import { TransactionNotFoundError, TransactionReceiptNotFoundError } from "viem";
 
 const sent: Array<{ functionName: string; args?: unknown[] }> = [];
 vi.mock("../src/chain/client.js", () => ({
@@ -46,10 +47,12 @@ describe("closeEpoch: a root that landed on-chain while its receipt was lost is 
   const epochs = new Map<number, { state: string; root: string | null; payload: string }>();
   let onchain = { hasPublished: false, lastEpoch: 0n, lastRootSetAt: 0n, free: 10n ** 21n, root: "0x" + "00".repeat(32) };
   let mempool = true;
+  let rpcDown = false;
+  let sentAgeSec = 0;
   const questions = ["ab", "cd", "ef"].map((h) => ({ id: "0x" + h.repeat(32), json: JSON.stringify({ p: "0.7000", baseline: "0.5000" }), outcome: "1" }));
   const calls = questions.map((q, i) => ({ caller: A, question_id: q.id, agree: true, block: "5", log_index: i }));
   const db = fakeDb([
-    [/SELECT state, root, budget, tx_hash FROM epochs/, ([e]) => ok(epochs.has(e as number) ? [{ ...epochs.get(e as number)!, budget: "0" }] : [])],
+    [/SELECT state, root, budget, tx_hash, EXTRACT/, ([e]) => ok(epochs.has(e as number) ? [{ ...epochs.get(e as number)!, budget: "0", age: String(sentAgeSec) }] : [])],
     [/UPDATE epochs SET tx_hash/, ([e, tx]) => { (epochs.get(e as number) as { tx_hash?: string }).tx_hash = tx as string; return ok(); }],
     [/FROM questions WHERE epoch = \$1 AND status = 'OPEN'/, () => ok(questions)],
     [/SELECT block FROM cursors/, ([name]) => ok((name as string).startsWith("transfers:") ? [{ block: "100" }] : [])],
@@ -83,8 +86,8 @@ describe("closeEpoch: a root that landed on-chain while its receipt was lost is 
       throw new Error(`unexpected read ${functionName}`);
     },
     waitForTransactionReceipt: receipt,
-    getTransactionReceipt: async () => { throw new Error("not found"); },
-    getTransaction: async () => { if (!mempool) throw new Error("not found"); return {}; },
+    getTransactionReceipt: async () => { if (rpcDown) throw new Error("HTTP request failed. Status: 429"); throw new TransactionReceiptNotFoundError({ hash: "0x00" }); },
+    getTransaction: async () => { if (!mempool) throw new TransactionNotFoundError({ hash: "0x00" }); return {}; },
   }) as never;
   const token = { getBlockNumber: async () => 100n, getBlock: async ({ blockNumber }: { blockNumber: bigint }) => ({ timestamp: BigInt(G - 1000 + Number(blockNumber) * 10) }) } as never;
   const cfg = { token: A, confirmations: 20n, logChunk: 1000n } as never;
@@ -120,6 +123,26 @@ describe("closeEpoch: a root that landed on-chain while its receipt was lost is 
     const r = await closeEpoch({ db, token, ledger: ledger(async () => ({})), cfg, lcfg, rcfg } as never, 0, true);
     expect(r.state).toBe("FAILED");
     expect(sent.length).toBe(0);
+  });
+  it("a node that fails or answers 'unknown' for less than 10 minutes never gets a second root", async () => {
+    epochs.clear();
+    onchain = { hasPublished: false, lastEpoch: 0n, lastRootSetAt: 0n, free: 10n ** 21n, root: "0x" + "00".repeat(32) };
+    mempool = false;
+    sentAgeSec = 0;
+    const deps = (l: unknown) => ({ db, token, ledger: l as never, cfg, lcfg, rcfg });
+    const lost = ledger(async () => { throw new Error("Timed out while waiting for transaction"); });
+    expect((await closeEpoch(deps(lost), 0, true)).state).toBe("WAIT");
+    rpcDown = true; // a 429: could not look
+    await expect(closeEpoch(deps(lost), 0, true)).rejects.toThrow(/429/);
+    rpcDown = false;
+    onchain.free = 2n * 10n ** 21n; // a buyback moved freeBalance: a recomputed root would differ
+    sentAgeSec = 120; // unknown, but young
+    expect((await closeEpoch(deps(lost), 0, true)).state).toBe("WAIT");
+    expect(sent.length).toBe(1);
+    sentAgeSec = 700; // unknown for more than 10 minutes: now it may be sent again
+    await closeEpoch(deps(lost), 0, true);
+    expect(sent.length).toBe(2);
+    rpcDown = false;
   });
 });
 

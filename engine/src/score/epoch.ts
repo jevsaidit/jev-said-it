@@ -1,6 +1,7 @@
 import { zeroHash, decodeEventLog, parseAbi, type Hex, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { blockAtOrBefore } from "../chain/blocktime.js";
+import { lookupTx } from "../chain/tx.js";
 import { makeWallet } from "../chain/client.js";
 import type { Config, LedgerConfig, RewardsConfig } from "../config.js";
 import { balanceAt, type Db, getCursor } from "../db/db.js";
@@ -55,6 +56,8 @@ async function store(db: Db, epoch: number, state: string, reason: string | null
  * timestamp STRICTLY before the start. A block stamped exactly at the start already belongs to the
  * epoch (the ledger's currentEpoch() says so there), so its transfers must not count.
  */
+const DROP_AFTER_SEC = 600;
+
 export const epochStartBlock = (client: PublicClient, genesis: number, epoch: number) =>
   blockAtOrBefore(client, genesis + epoch * EPOCH_LENGTH - 1);
 
@@ -63,8 +66,8 @@ export async function closeEpoch(d: EpochDeps, epoch: number, publish: boolean):
   const readDist = <T>(functionName: string, args: unknown[] = []) =>
     ledger.readContract({ address: rcfg.rewardsDistributor, abi: DISTRIBUTOR_ABI, functionName: functionName as never, args: args as never }) as Promise<T>;
 
-  const already = await db.query<{ state: string; root: string | null; budget: string | null; tx_hash: string | null }>(
-    "SELECT state, root, budget, tx_hash FROM epochs WHERE epoch = $1",
+  const already = await db.query<{ state: string; root: string | null; budget: string | null; tx_hash: string | null; age: string | null }>(
+    "SELECT state, root, budget, tx_hash, EXTRACT(EPOCH FROM now() - sent_at)::text age FROM epochs WHERE epoch = $1",
     [epoch],
   );
   const row = already.rows[0];
@@ -83,12 +86,15 @@ export async function closeEpoch(d: EpochDeps, epoch: number, publish: boolean):
     return { state: "FAILED", reason: `epoch ${epoch} has root ${onchain} on-chain, not the one stored (${row?.root ?? "none"}): check by hand` };
   }
   // A root sent but not on-chain yet: while the node still knows the transaction, wait for it.
+  // A node error throws (the task goes BLIND): only a node that ANSWERS "unknown" for 10 minutes
+  // lets us conclude the root was dropped and send it again (same gate as the buyback and the batch).
   if (row?.state === "PAYABLE" && row.tx_hash) {
-    const rc = await ledger.getTransactionReceipt({ hash: row.tx_hash as Hex }).catch(() => null);
-    if (!rc && (await ledger.getTransaction({ hash: row.tx_hash as Hex }).catch(() => null))) {
-      return { state: "WAIT", reason: `setEpochRoot ${row.tx_hash} sent, not mined yet` };
+    const t = await lookupTx(ledger, row.tx_hash as Hex);
+    if (t.state === "pending") return { state: "WAIT", reason: `setEpochRoot ${row.tx_hash} sent, not mined yet` };
+    if (t.state === "unknown" && Number(row.age ?? 0) < DROP_AFTER_SEC) {
+      return { state: "WAIT", reason: `setEpochRoot ${row.tx_hash} not known to the node yet` };
     }
-    // mined and reverted, or dropped: the epoch is computed and sent again below
+    // mined and reverted, or unknown for 10 minutes: the epoch is computed and sent again below
   }
 
   const genesis = Number(await ledger.readContract({ address: lcfg.callLedger, abi: LEDGER_ABI, functionName: "genesis" }));
@@ -178,7 +184,7 @@ export async function closeEpoch(d: EpochDeps, epoch: number, publish: boolean):
     return { state: "FAILED", reason: `setEpochRoot failed: ${(e as Error).message.split("\n")[0]}` };
   }
   // Stored before waiting: if the receipt never comes back, the next pass finds the root on-chain.
-  await db.query("UPDATE epochs SET tx_hash = $2 WHERE epoch = $1 AND state = 'PAYABLE'", [epoch, tx]);
+  await db.query("UPDATE epochs SET tx_hash = $2, sent_at = now() WHERE epoch = $1 AND state = 'PAYABLE'", [epoch, tx]);
   const receipt = await ledger.waitForTransactionReceipt({ hash: tx }).catch(() => null);
   if (!receipt) return { state: "WAIT", reason: `setEpochRoot ${tx} sent, receipt not read yet` };
   const ev = receipt.logs

@@ -216,9 +216,23 @@ code,
   font-size: 0.95rem;
   padding: 0.45em 0.9em;
 }
+/* Narrow screens: the sections move to a scrollable second row instead of disappearing,
+   so "Play" is always one tap away. */
 @media (max-width: 820px) {
+  .nav__row {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+  .nav__row > nav {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
   .nav__links {
-    display: none;
+    gap: 1.1rem;
+    white-space: nowrap;
+    padding-block: 0 12px;
   }
 }
 

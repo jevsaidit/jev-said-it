@@ -66,7 +66,8 @@ will have tokens only after the first `processSwap`. This is the room that makes
 
 - **Candidates:** Pons tokens graduated in the last 48h, with at least 10 swaps in the last hour and
   60 over the last 6h (22/09: a one-hour burst on a dead pool gave VOIDs on testnet).
-- **Reference (rule v2, 22/09):** the time-weighted average of `sqrtPriceX96` over the 10 minutes
+- **Reference (rule v2, 22/09):** the block-weighted average of `sqrtPriceX96` (not of the price: the
+  committed text says so, because the two averages can order two windows differently) over the 10 minutes
   (`window` = 600 s, committed in the question) ending at the block where the calls close. v1 used the
   last swap, and whoever had called could push the price in the deadline block, when nobody can call
   any more: an average makes that cost ten minutes of holding the price. It is read from the logs, not

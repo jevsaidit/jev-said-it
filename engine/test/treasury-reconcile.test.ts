@@ -6,6 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeAbiParameters, encodeEventTopics, parseAbi, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { TransactionNotFoundError, TransactionReceiptNotFoundError } from "viem";
 
 const sent: string[] = [];
 vi.mock("../src/chain/client.js", () => ({
@@ -93,11 +94,11 @@ function chain(rc: { wait: () => Promise<unknown>; receipt: () => unknown; inMem
     waitForTransactionReceipt: rc.wait,
     getTransactionReceipt: async () => {
       const r = rc.receipt();
-      if (!r) throw new Error("TransactionReceiptNotFoundError");
+      if (!r) throw new TransactionReceiptNotFoundError({ hash: "0x00" });
       return r;
     },
     getTransaction: async () => {
-      if (!rc.inMempool()) throw new Error("TransactionNotFoundError");
+      if (!rc.inMempool()) throw new TransactionNotFoundError({ hash: "0x00" });
       return { hash: "0x" };
     },
   } as never;

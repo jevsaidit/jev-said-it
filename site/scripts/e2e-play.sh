@@ -60,7 +60,7 @@ until_ '[ "$(get /epochs/current | jq ".questions|length")" = 3 ]'
 
 cd $SITE
 # A production build that knows the local chain (31337); real builds never do.
-rm -rf .next && NEXT_PUBLIC_ALLOW_ANVIL=1 pnpm build >/dev/null
+rm -rf .next && NEXT_PUBLIC_ALLOW_ANVIL=1 NEXT_PUBLIC_ANVIL_RPC=$A pnpm build >/dev/null
 # The feed proxy caches for 30s on disk: a previous run's questions must not leak into this one.
 rm -rf .next/cache/fetch-cache
 ENGINE_FEED_URL=$S node_modules/.bin/next start -p $WP -H 127.0.0.1 > $LOG/site.log 2>&1 & WEB=$!

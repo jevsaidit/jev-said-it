@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeAbiParameters, encodeEventTopics, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { TransactionNotFoundError, TransactionReceiptNotFoundError } from "viem";
 
 const sent: Array<{ functionName: string; args?: unknown[] }> = [];
 vi.mock("../src/chain/client.js", () => ({
@@ -73,7 +74,7 @@ describe("openBatch: a batch whose receipt was lost is settled from the chain, n
       throw new Error(`unexpected read ${functionName}`);
     },
     waitForTransactionReceipt: receipt,
-    getTransactionReceipt: async () => { if (!receiptOnChain) throw new Error("not found"); return receiptOnChain; },
+    getTransactionReceipt: async () => { if (!receiptOnChain) throw new TransactionReceiptNotFoundError({ hash: "0x00" }); return receiptOnChain; },
     getTransaction: async () => ({}),
   }) as never;
   const cfg = { ledgerRpcUrl: "http://x", callLedger: A, keeperPk: PK, callWindowSec: 7200, minCallWindowSec: 1800, epochMarginSec: 300, horizonSec: 21600, questionsPerBatch: 10, minSwapsLastHour: 10 };

@@ -83,6 +83,9 @@ export default function Home() {
           <nav aria-label="Sections">
             <ul className="nav__links">
               <li>
+                <a href="#play">Play</a>
+              </li>
+              <li>
                 <a href="#receipts">Receipts</a>
               </li>
               <li>
@@ -96,9 +99,6 @@ export default function Home() {
               </li>
               <li>
                 <a href="#feed">Live feed</a>
-              </li>
-              <li>
-                <a href="#play">Play</a>
               </li>
             </ul>
           </nav>

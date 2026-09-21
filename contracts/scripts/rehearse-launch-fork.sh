@@ -4,8 +4,8 @@
 #
 #   §2.2 map from nonce 0 -> §4.1 DeployAdapter -> §4.4 launch from a separate EOA
 #   -> §4.5 gate on the launch record -> §4.6 DeployCore -> §4.6.1 map comparison -> §4.6.2 wiring
-#   -> §4.7 scheduleBatch -> §4.6.3 setRouter -> curve, graduation, trading, Pons' sweep
-#   -> +24h executeBatch -> owners = timelock -> the engine's treasury pass on the live wiring.
+#   -> §4.7 handover batch (acceptOwnership x3 + updateDelay 24h, executed at once) -> §4.6.3 setRouter
+#   -> curve, graduation, trading, Pons' sweep -> the engine's treasury pass on the live wiring.
 #
 # The deployer is a FRESH random key, never the mainnet one: a rehearsal must not be able to touch
 # the real deploy key's nonce, not even by a wrong --rpc-url. Broadcast records go to a temp dir,
@@ -104,10 +104,15 @@ for c in $FEE_ROUTER $DIST $LEDGER; do
 done
 check "$(cast call $SWAP 'owner()(address)' --rpc-url $A)" "$TIMELOCK" "swap adapter owner = timelock already"
 
-echo "§4.7 scheduleBatch right away (the 24h start here)"
-TARGETS="[$FEE_ROUTER,$DIST,$LEDGER]"; SELS="[0x79ba5097,0x79ba5097,0x79ba5097]"
-check "$(st $TIMELOCK 'scheduleBatch(address[],uint256[],bytes[],bytes32,bytes32,uint256)' "$TARGETS" "[0,0,0]" "$SELS" $Z $Z 86400 --private-key $PROPOSER_PK)" "0x1" "scheduleBatch by the proposer"
-check "$(rv $TIMELOCK 'executeBatch(address[],uint256[],bytes[],bytes32,bytes32)' "$TARGETS" "[0,0,0]" "$SELS" $Z $Z --private-key $TRADER_PK)" "reverted" "executeBatch before 24h reverts"
+echo "§4.7 handover batch, right away: acceptOwnership x3 + updateDelay(86400), delay 0"
+check "$(cast call $TIMELOCK 'getMinDelay()(uint256)' --rpc-url $A)" "0" "the timelock is born with delay 0"
+UPD=$(cast calldata 'updateDelay(uint256)' 86400)
+TARGETS="[$FEE_ROUTER,$DIST,$LEDGER,$TIMELOCK]"; SELS="[0x79ba5097,0x79ba5097,0x79ba5097,$UPD]"
+check "$(st $TIMELOCK 'scheduleBatch(address[],uint256[],bytes[],bytes32,bytes32,uint256)' "$TARGETS" "[0,0,0,0]" "$SELS" $Z $Z 0 --private-key $PROPOSER_PK)" "0x1" "scheduleBatch by the proposer"
+check "$(st $TIMELOCK 'executeBatch(address[],uint256[],bytes[],bytes32,bytes32)' "$TARGETS" "[0,0,0,0]" "$SELS" $Z $Z --private-key $TRADER_PK)" "0x1" "executeBatch at once, by anyone"
+check "$(cast call $TIMELOCK 'getMinDelay()(uint256)' --rpc-url $A | awk '{print $1}')" "86400" "the delay is now 24h"
+for c in $FEE_ROUTER $DIST $LEDGER $SWAP; do check "$(cast call $c 'owner()(address)' --rpc-url $A)" "$TIMELOCK" "$c owner = timelock"; done
+check "$(rv $TIMELOCK 'schedule(address,uint256,bytes,bytes32,bytes32,uint256)' $FEE_ROUTER 0 $(cast calldata 'setKeeper(address)' $TRADER) $Z $Z 3600 --private-key $PROPOSER_PK)" "reverted" "from now on nothing can be scheduled under 24h"
 
 echo "§4.6.3 setRouter, only once"
 check "$(st $PONS_ESCROW_ADAPTER 'setRouter(address)' $FEE_ROUTER --private-key $PROPOSER_PK)" "0x1" "setRouter from the proposer"
@@ -128,11 +133,6 @@ POOL=$(cast keccak $(cast abi-encode 'f(address,address,uint24,int24,address)' $
 check "$(cast send $POOL_HOOKS 'sweepPoolFees(bytes32,uint256,uint256)' $POOL 1 0 --from $OPERATOR --unlocked --rpc-url $A --json | jq -r .status)" "0x1" "sweep by the Pons operator"
 OWED=$(cast call $PONS_FEE_ESCROW 'balanceOf(address)(uint256)' $PONS_ESCROW_ADAPTER --rpc-url $A | awk '{print $1}')
 echo "   escrow owes the adapter: $OWED wei"
-
-echo "§4.7 +24h: executeBatch, then every owner is the timelock"
-warp 86401
-check "$(st $TIMELOCK 'executeBatch(address[],uint256[],bytes[],bytes32,bytes32)' "$TARGETS" "[0,0,0]" "$SELS" $Z $Z --private-key $TRADER_PK)" "0x1" "executeBatch by anyone after 24h"
-for c in $FEE_ROUTER $DIST $LEDGER $SWAP; do check "$(cast call $c 'owner()(address)' --rpc-url $A)" "$TIMELOCK" "$c owner = timelock"; done
 
 echo "§5-6 the engine on the live wiring: one treasury pass"
 warp 18000   # 5h into the current epoch: past the latest possible buyback time, so the engine acts now

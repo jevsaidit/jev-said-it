@@ -1,6 +1,7 @@
 import { decodeEventLog, parseAbi, type Hex, type PublicClient, type TransactionReceipt } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { makeWallet } from "../chain/client.js";
+import { lookupTx } from "../chain/tx.js";
 import type { LedgerConfig } from "../config.js";
 import { type Db, getCursor, inTx } from "../db/db.js";
 import { V4_CURSOR } from "../indexer/v4.js";
@@ -26,7 +27,7 @@ export const REFERENCE_WINDOW_SEC = 600;
 // price in the very block of the deadline, when no one can call any more; averaging over 10 minutes
 // makes that cost ten minutes of holding the price, not one swap.
 const RULE_A =
-  "1 if the token's ETH price, time-weighted over the `window` seconds ending at deadline+horizon, is strictly higher than time-weighted over the `window` seconds ending at deadline; 0 otherwise; VOID if the pool has no Swap between deadline and deadline+horizon.";
+  "1 if the pool's sqrtPriceX96 (token per ETH), time-weighted by block over the `window` seconds ending at deadline+horizon, is strictly lower than the same average over the `window` seconds ending at deadline (a lower sqrtPriceX96 is a higher ETH price of the token); 0 otherwise; VOID if the pool has no Swap between deadline and deadline+horizon.";
 
 export type OpenResult =
   | { state: "OPENED"; epoch: number; deadline: number; ids: Hex[]; tx: Hex; block: bigint }
@@ -88,9 +89,10 @@ export async function openBatch(d: OpenDeps): Promise<OpenResult> {
       else return { state: "SKIPPED", reason: "a batch is being sent" };
       continue;
     }
-    const rc = await ledger.getTransactionReceipt({ hash: b.tx_hash as Hex }).catch(() => null);
+    const t = await lookupTx(ledger, b.tx_hash as Hex); // a node error throws: never read as "dropped"
+    const rc = t.state === "mined" ? t.receipt : null;
     if (!rc) {
-      if (await ledger.getTransaction({ hash: b.tx_hash as Hex }).catch(() => null)) return { state: "SKIPPED", reason: `openQuestions ${b.tx_hash} not mined yet` };
+      if (t.state === "pending") return { state: "SKIPPED", reason: `openQuestions ${b.tx_hash} not mined yet` };
       if (Number(b.age) <= PENDING_DROP_SEC) return { state: "SKIPPED", reason: `openQuestions ${b.tx_hash} not known to the node yet` };
       await failIds(`openQuestions ${b.tx_hash} dropped`);
       continue;

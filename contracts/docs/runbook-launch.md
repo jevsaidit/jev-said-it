@@ -456,20 +456,9 @@ export RPC=robinhood_testnet          # <<-- in this section, always testnet
      --rpc-url $RPC --private-key <TESTNET_TIMELOCK_PROPOSER_KEY>
    cast call $PONS_ESCROW_ADAPTER 'router()(address)' --rpc-url $RPC   # = $FEE_ROUTER
    ```
-7. **3.7 — `acceptOwnership` via the timelock, testnet version** (same payloads as §4.7, only a different
-   `$RPC`; wait the 24h here too, so the dress rehearsal also rehearses the wait):
-   ```bash
-   Z=0x0000000000000000000000000000000000000000000000000000000000000000
-   cast send $TIMELOCK 'scheduleBatch(address[],uint256[],bytes[],bytes32,bytes32,uint256)' \
-     "[$FEE_ROUTER,$REWARDS_DISTRIBUTOR,$CALL_LEDGER]" "[0,0,0]" \
-     "[0x79ba5097,0x79ba5097,0x79ba5097]" $Z $Z 86400 \
-     --rpc-url $RPC --private-key <TESTNET_TIMELOCK_PROPOSER_KEY>
-   # ... 24h later ...
-   cast send $TIMELOCK 'executeBatch(address[],uint256[],bytes[],bytes32,bytes32)' \
-     "[$FEE_ROUTER,$REWARDS_DISTRIBUTOR,$CALL_LEDGER]" "[0,0,0]" \
-     "[0x79ba5097,0x79ba5097,0x79ba5097]" $Z $Z \
-     --rpc-url $RPC --private-key <ANY_TESTNET_KEY_WITH_GAS>
-   ```
+7. **3.7 — the handover batch, testnet version**: exactly the §4.7 box (acceptOwnership x3 +
+   `updateDelay(86400)`, delay 0, executed at once), with the testnet `$RPC` and the testnet proposer
+   key. Then check `getMinDelay()` = 86400 and the four owners.
 8. Simulate a whole epoch:
    ```bash
    cast send $PONS_FEE_ESCROW 'credit(address)' $PONS_ESCROW_ADAPTER --value 0.01ether \
@@ -1079,14 +1068,12 @@ is still owner, instead of finding out in 24 hours.
 > means signing one more transaction **from the deploy key** — that is, doing, out of a
 > misunderstanding, exactly the thing that §2.2 and §8 forbid and that moves the nonce.
 
-> ### As soon as the three rows are right, **schedule the `acceptOwnership` batch right away**
-> The command is in **§4.7** and can be given **now**: it needs only `$TIMELOCK` and the three
-> addresses, which you already printed in §4.6.1, and its precondition (`pendingOwner` = timelock) has
-> just been verified above. **The timelock's 24 hours start from the `scheduleBatch`, not
-> from the deploy**: giving it here instead of after §4.6.4 shortens by the whole of §4.6.3 and §4.6.4 — Dexscreener
-> claim included — the window in which the deploy key is still owner of everything (§4.7).
-> It takes nothing away: the deployer stays owner until the `executeBatch`, so the §4.7
-> emergency lever stays intact, and the executor is `address(0)`, so in 24 hours anyone can execute.
+> ### As soon as the three rows are right, **run the §4.7 handover batch right away**
+> The command is the box at the top of **§4.7** and can be given **now**: it needs only `$TIMELOCK`
+> and the three addresses printed in §4.6.1, and its precondition (`pendingOwner` = timelock) has
+> just been verified above. It executes at once (the timelock is born with delay 0) and sets the
+> 24-hour delay in the same transaction: until it has gone through, the timelock has no delay, so do
+> not leave it for after §4.6.4.
 
 #### 4.6.3 `setRouter` **[IRREVERSIBLE — only once in the contract's life]**
 
@@ -1245,7 +1232,31 @@ minutes, and needs care because two rules of this runbook seem to contradict eac
 > prudent behavior — keeping the launch EOA available and attended in the first fifteen
 > minutes — is right **whatever** the mechanism, so it applies regardless.
 
-### 4.7 T+5 min → T+24h — the window in which the deployer is still owner
+### 4.7 T+5 min — the handover batch (since 22/09: minutes, not 24 hours)
+
+> **Changed on 22/09/2026.** The timelock is now born with **delay 0** (`DeployCore`), and the
+> proposer runs **one** batch right after §4.6.2, which takes ownership of the three contracts AND
+> sets the delay to 24 hours. The window in which the deploy key owns everything shrinks from 24
+> hours to the minutes between `DeployCore` and this batch, and the fees can be switched on at once
+> (§5.0 step 4), so the first epochs are paid. From the batch on, every change waits 24 hours as before.
+> **Until `getMinDelay()` reads 86400 the timelock has no delay at all**: run it immediately.
+>
+> ```bash
+> Z=0x0000000000000000000000000000000000000000000000000000000000000000
+> UPD=$(cast calldata 'updateDelay(uint256)' 86400)
+> T="[$FEE_ROUTER,$REWARDS_DISTRIBUTOR,$CALL_LEDGER,$TIMELOCK]"
+> D="[0x79ba5097,0x79ba5097,0x79ba5097,$UPD]"          # acceptOwnership() x3, updateDelay(24h)
+> cast send $TIMELOCK 'scheduleBatch(address[],uint256[],bytes[],bytes32,bytes32,uint256)' \
+>   "$T" "[0,0,0,0]" "$D" $Z $Z 0 --rpc-url $RPC --private-key <TIMELOCK_PROPOSER_KEY>
+> cast send $TIMELOCK 'executeBatch(address[],uint256[],bytes[],bytes32,bytes32)' \
+>   "$T" "[0,0,0,0]" "$D" $Z $Z --rpc-url $RPC --private-key <ANY_KEY_WITH_GAS>
+> MD=$(cast call $TIMELOCK 'getMinDelay()(uint256)' --rpc-url $RPC)
+> need MD && echo "minDelay = $MD   (MUST be 86400)"
+> ```
+> Then the owner check at the end of this section (all four = `$TIMELOCK`). Rehearsed on the mainnet
+> fork (`contracts/scripts/rehearse-launch-fork.sh`), including that a later `schedule` under 24h reverts.
+> **The rest of this section describes the old 24-hour window**: it now applies only to the minutes
+> before the batch, and its emergency rules still hold in those minutes.
 
 Until the `acceptOwnership`, **`DEPLOYER_PK` is owner** of FeeRouter, RewardsDistributor and
 CallLedger, and can change their splits, wallets, keeper and scorer **with no wait at all**.
@@ -1321,31 +1332,8 @@ These are two different things, and they must be kept apart:
 `UniV4SwapAdapter` is plain `Ownable`: its `transferOwnership` is **already effective** at the
 end of `DeployCore`, it requires no acceptance — and therefore it is **not** correctable by the deployer.
 
-Schedule the three acceptances right away, from the `TIMELOCK_PROPOSER`:
-
-```bash
-Z=0x0000000000000000000000000000000000000000000000000000000000000000
-cast send $TIMELOCK 'scheduleBatch(address[],uint256[],bytes[],bytes32,bytes32,uint256)' \
-  "[$FEE_ROUTER,$REWARDS_DISTRIBUTOR,$CALL_LEDGER]" "[0,0,0]" \
-  "[0x79ba5097,0x79ba5097,0x79ba5097]" $Z $Z 86400 \
-  --rpc-url $RPC --private-key <TIMELOCK_PROPOSER_KEY>
-```
-
-(`0x79ba5097` = selector of `acceptOwnership()`.)
-
-After **24 hours** — a whole day passes between these two transactions, so the shell is
-almost certainly a different one: **rerun the §4 preamble and the §4.6.1 `export`s** before
-continuing. The executor is `address(0)`, so anyone can execute:
-
-```bash
-cast send $TIMELOCK 'executeBatch(address[],uint256[],bytes[],bytes32,bytes32)' \
-  "[$FEE_ROUTER,$REWARDS_DISTRIBUTOR,$CALL_LEDGER]" "[0,0,0]" \
-  "[0x79ba5097,0x79ba5097,0x79ba5097]" $Z $Z \
-  --rpc-url $RPC --private-key <ANY_KEY_WITH_GAS>
-```
-
-Before the 24h `executeBatch` reverts with `TimelockUnexpectedOperationState`: that is the
-expected behavior, not an encoding error.
+The acceptances are no longer scheduled here with a 24-hour delay: they are the handover batch in
+the box at the top of this section, executed at once together with `updateDelay(86400)`.
 
 **Final check** — after this, **[IRREVERSIBLE]**: every parameter goes through the 24 hours.
 
@@ -1382,15 +1370,19 @@ rehearsal: the engine refuses a database that belongs to another ledger and woul
    The engine reads the genesis from the contract: `$CALL_LEDGER_GENESIS` is for your notes and for
    the §4.6.4 verification, not an engine variable.
    Prerequisite: **one real call to TypeSafe checked by hand** before T0 (`engine/README.md`).
-3. **Rewards: first root by hand.** Leave `REWARDS_DISTRIBUTOR`/`SCORER_PK` unset at first; when
-   epoch 0 has ended run `node --import tsx src/cli/main.ts close-epoch 0` (no publish), read the
-   PAYABLE payload, and only then set the two variables. `EXCLUDE` = distributor, ledger, router,
+3. **Rewards: first root by hand.** Leave `REWARDS_DISTRIBUTOR`/`SCORER_PK` unset on Railway at first.
+   When epoch 0 has ended, in YOUR shell (not on Railway) export `REWARDS_DISTRIBUTOR`, `SCORER_PK`,
+   `EXCLUDE`, `LEDGER_START_BLOCK` and the engine's `DATABASE_URL`, run
+   `node --import tsx src/cli/main.ts close-epoch 0` (it computes, it does not publish), read the
+   PAYABLE payload, and only then set the variables on Railway. It is PAYABLE only if a buyback has
+   already funded the distributor (step 4). `EXCLUDE` = distributor, ledger, router,
    swap adapter, `TEAM_WALLET`, the team's wallets, the PoolManager `0x8366…` and the Pons curve:
    they hold tokens and must never be scored.
-4. **Fees: only after §4.7 `executeBatch`.** `FEE_ROUTER` and `PONS_ESCROW_ADAPTER` stay **unset**
-   until the timelock owns the router, distributor and ledger: with them set the engine claims and
-   buys back on its own, inside the 24h in which the deploy key could still drain the distributor
-   (§4.7, §6.1). Until then the fees wait in the Pons escrow, safely.
+4. **Fees: right after the §4.7 handover batch** (minutes after DeployCore, not 24h). `FEE_ROUTER` and
+   `PONS_ESCROW_ADAPTER` stay unset only until `getMinDelay()` reads 86400 and the three owners are the
+   timelock: before that the deploy key could still drain the distributor. Then set them: the first
+   buyback funds the distributor and the first epochs are paid (an epoch that closes with an empty
+   distributor is stored NOT_PAYABLE for good).
 5. **Site.** `NEXT_PUBLIC_TOKEN_ADDRESS` is build-time: set it on the site service and redeploy at
    T0+. `ENGINE_FEED_URL` = the engine's private domain on Railway.
 

@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {DeployAdapter} from "../script/DeployAdapter.s.sol";
 import {DeployCore} from "../script/DeployCore.s.sol";
 import {FeeRouter} from "../src/FeeRouter.sol";
+import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 
 /// @title DeployOrderTest — the deploy order is a public commitment
 /// @notice At T-4 days the social channel publishes the table that maps each contract to the deployer's
@@ -82,7 +83,7 @@ contract DeployOrderTest is Test {
         // a selector missing on a different type does not answer, and one present but on another
         // contract returns a value that does not match. The calls are raw on purpose,
         // so a reorder says at which nonce it happened instead of an `EvmError: Revert`.
-        _expectUint(expectedTimelock, "getMinDelay()", 24 hours, "nonce 1 = TimelockController");
+        _expectUint(expectedTimelock, "getMinDelay()", 0, "nonce 1 = TimelockController, born with delay 0");
         _expectAddress(expectedRouter, "computeWallet()", computeWallet, "nonce 2 = FeeRouter");
         _expectAddress(expectedDist, "scorer()", scorer, "nonce 3 = RewardsDistributor");
         _expectAddress(expectedDist, "guardian()", guardian, "nonce 3 = RewardsDistributor");
@@ -132,5 +133,39 @@ contract DeployOrderTest is Test {
             uint256(_staticcall(target, sig, what)) == expected,
             string.concat(what, ": ", sig, " does not match (deploy order changed?)")
         );
+    }
+
+    /// The handover batch of runbook §4.7: one scheduleBatch + executeBatch from the proposer takes
+    /// ownership of the three Ownable2Step contracts AND sets the 24h delay. After it, the deploy key
+    /// owns nothing and no change can skip the 24 hours.
+    function test_handover_batch_takes_ownership_and_sets_24h() public {
+        // A real clock: at Foundry's default timestamp 1, an operation scheduled with delay 0 gets
+        // timestamp 1, which OpenZeppelin reads as DONE (_DONE_TIMESTAMP = 1). Never the case on-chain.
+        vm.warp(1_790_000_000);
+        new DeployAdapter().run();
+        vm.setEnv("PONS_ESCROW_ADAPTER", vm.toString(vm.computeCreateAddress(deployer, NONCE_PONS_ESCROW_ADAPTER)));
+        new DeployCore().run();
+        TimelockController tl = TimelockController(payable(vm.computeCreateAddress(deployer, NONCE_TIMELOCK)));
+        address[] memory t = new address[](4);
+        t[0] = vm.computeCreateAddress(deployer, NONCE_FEE_ROUTER);
+        t[1] = vm.computeCreateAddress(deployer, NONCE_REWARDS_DISTRIBUTOR);
+        t[2] = vm.computeCreateAddress(deployer, NONCE_CALL_LEDGER);
+        t[3] = address(tl);
+        uint256[] memory v = new uint256[](4);
+        bytes[] memory d = new bytes[](4);
+        for (uint256 i = 0; i < 3; i++) d[i] = abi.encodeWithSignature("acceptOwnership()");
+        d[3] = abi.encodeWithSignature("updateDelay(uint256)", 24 hours);
+        vm.prank(proposer);
+        tl.scheduleBatch(t, v, d, bytes32(0), bytes32(0), 0);
+        tl.executeBatch(t, v, d, bytes32(0), bytes32(0)); // open executor: anyone
+        assertEq(tl.getMinDelay(), 24 hours, "the delay is 24h after the batch");
+        for (uint256 i = 0; i < 3; i++) {
+            (, bytes memory o) = t[i].staticcall(abi.encodeWithSignature("owner()"));
+            assertEq(abi.decode(o, (address)), address(tl), "owned by the timelock");
+        }
+        // and from now on nothing can be scheduled under 24h
+        vm.prank(proposer);
+        vm.expectRevert();
+        tl.schedule(t[0], 0, abi.encodeWithSignature("setKeeper(address)", address(1)), bytes32(0), bytes32(uint256(1)), 1 hours);
     }
 }

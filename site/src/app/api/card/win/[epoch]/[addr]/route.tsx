@@ -22,6 +22,6 @@ export async function GET(_req: Request, ctx: { params: Promise<{ epoch: string;
         <Line color={C.dim}>bought on the market with trading fees.</Line>
       </Card>
     ),
-    { width: 1200, height: 630, fonts, headers: { "cache-control": "public, max-age=86400, immutable" } },
+    { width: 1200, height: 630, fonts, headers: { "cache-control": "public, max-age=3600" } },
   );
 }

@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { createPublicClient, http, type Address } from "viem";
+import { CHAINS, DISTRIBUTOR_ABI } from "@/lib/chains";
 
 // Server side of the share receipts. Everything printed on a card comes from the engine, never
 // from the URL: a link cannot make a card claim a reward that was not published. The only thing
@@ -52,6 +54,22 @@ export async function winCard(epoch: string, account: string): Promise<WinCard |
   if (!/^\d{1,6}$/.test(epoch) || !/^0x[0-9a-fA-F]{40}$/.test(account)) return null;
   const c = await engine<{ amount: string }>(`/claim/${epoch}/${account}`);
   if (!c) return null;
+  // A published root can still be voided by the guardian: that reward will never be paid, so no card.
+  // Asked to the chain, not to the engine, which does not track voids. Not knowing = no card either.
+  const cfg = await engine<{ chainId: number | null; rewardsDistributor: Address | null }>("/config");
+  const chain = cfg?.chainId ? CHAINS[cfg.chainId] : undefined;
+  if (!chain || !cfg?.rewardsDistributor) return null;
+  try {
+    const voided = await createPublicClient({ chain, transport: http(undefined, { timeout: 8000 }) }).readContract({
+      address: cfg.rewardsDistributor,
+      abi: DISTRIBUTOR_ABI,
+      functionName: "epochVoided",
+      args: [BigInt(epoch)],
+    });
+    if (voided) return null;
+  } catch {
+    return null;
+  }
   return { epoch: Number(epoch), account: account.toLowerCase(), amount: BigInt(c.amount) };
 }
 

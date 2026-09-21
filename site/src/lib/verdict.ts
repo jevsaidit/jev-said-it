@@ -16,7 +16,7 @@ export function questionId(json: string): string {
 
 // Type A rule, verbatim from engine/src/questions/open.ts (RULE_A).
 const RULE_A =
-  "1 if the token's ETH price, time-weighted over the `window` seconds ending at deadline+horizon, is strictly higher than time-weighted over the `window` seconds ending at deadline; 0 otherwise; VOID if the pool has no Swap between deadline and deadline+horizon.";
+  "1 if the pool's sqrtPriceX96 (token per ETH), time-weighted by block over the `window` seconds ending at deadline+horizon, is strictly lower than the same average over the `window` seconds ending at deadline (a lower sqrtPriceX96 is a higher ETH price of the token); 0 otherwise; VOID if the pool has no Swap between deadline and deadline+horizon.";
 
 // Sample question: the fields are the engine's real ones, the addresses are not. The site says so.
 export const SAMPLE: Canonical = {

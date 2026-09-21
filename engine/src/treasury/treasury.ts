@@ -1,6 +1,7 @@
 import { decodeEventLog, encodeFunctionData, encodePacked, keccak256, parseAbi, type Address, type Hex, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { makeWallet } from "../chain/client.js";
+import { lookupTx } from "../chain/tx.js";
 import { ponsEthPoolId } from "../chain/pool.js";
 import { PONS_HOOK, POOL_MANAGER } from "../config.js";
 import type { Db } from "../db/db.js";
@@ -110,7 +111,7 @@ async function pendingSwaps(db: Db): Promise<Pending[]> {
   const r = await db.query<{ epoch: number; tx_hash: string; detail: string; age: string }>(
     `SELECT p.epoch, p.tx_hash, p.detail, EXTRACT(EPOCH FROM now() - p.at)::text age
        FROM treasury_ops p
-      WHERE p.kind = $1
+      WHERE p.kind = $1 AND p.tx_hash IS NOT NULL
         AND NOT EXISTS (SELECT 1 FROM treasury_ops f WHERE f.tx_hash = p.tx_hash AND f.kind <> $1)
       ORDER BY p.id`,
     [SWAP_PENDING],
@@ -123,10 +124,10 @@ async function pendingSwaps(db: Db): Promise<Pending[]> {
  * outcome is not knowable yet (still in the mempool, or the node does not answer).
  */
 async function settleSwap(db: Db, chain: PublicClient, cfg: TreasuryConfig, p: Pending): Promise<TreasuryOutcome | null> {
-  const rc = await chain.getTransactionReceipt({ hash: p.tx }).catch(() => null);
+  const t = await lookupTx(chain, p.tx); // a node error throws: never read as "dropped"
+  const rc = t.state === "mined" ? t.receipt : null;
   if (!rc) {
-    const inPool = await chain.getTransaction({ hash: p.tx }).catch(() => null);
-    if (inPool || p.ageSec < DROP_AFTER_SEC) return null;
+    if (t.state === "pending" || p.ageSec < DROP_AFTER_SEC) return null;
     await record(db, p.epoch, "SWAP_DROPPED", p.tx, { ...p.detail, note: `unknown to the node after ${Math.round(p.ageSec)}s` });
     return { state: "FAILED", reason: `processSwap ${p.tx} dropped: the next pass may send a new one` };
   }

@@ -97,6 +97,9 @@ CREATE TABLE IF NOT EXISTS epochs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- When the root transaction left: an unknown hash is called dropped only 10 minutes after it.
+ALTER TABLE epochs ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ;
+
 -- The token's ticker, read with symbol() at opening. The site needs it, it is NOT in the committed
 -- JSON: a symbol is chosen by whoever launches the token, and decides nothing.
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS symbol TEXT;

@@ -4,7 +4,7 @@ import { makeClient } from "../chain/client.js";
 import { type Config, type LedgerConfig, type RewardsConfig } from "../config.js";
 import type { Db } from "../db/db.js";
 import { runCycle } from "../indexer/cycle.js";
-import { epochOf } from "../questions/epoch.js";
+import { EPOCH_LENGTH, epochOf } from "../questions/epoch.js";
 import type { VerdictModel } from "../questions/model.js";
 import { LEDGER_ABI, openBatch } from "../questions/open.js";
 import { resolveDue } from "../resolve/resolve.js";
@@ -213,11 +213,13 @@ export async function serve(d: ServiceDeps): Promise<void> {
       const { genesis } = await ledgerMeta();
       const epoch = epochOf(await chainNow(), genesis);
       // The start block of an epoch never changes once found: one binary search per epoch, not per request.
-      if (!startBlocks.has(epoch)) {
-        const b = await epochStartBlock(d.token, genesis, epoch);
-        if (b !== null) startBlocks.set(epoch, b);
+      let startBlock = startBlocks.get(epoch) ?? null;
+      if (startBlock === null) {
+        startBlock = await epochStartBlock(d.token, genesis, epoch);
+        // Cached only once the epoch is 2 minutes old: right at the boundary a lagging token node
+        // would answer with its own head, and that wrong block would be kept for the whole epoch.
+        if (startBlock !== null && (await chainNow()) - (genesis + epoch * EPOCH_LENGTH) > 120) startBlocks.set(epoch, startBlock);
       }
-      const startBlock = startBlocks.get(epoch) ?? null;
       const indexedBlock = await getCursor(d.db, transferCursor(d.cfg.token));
       return send(res, 200, jsonOut(await holderView(d.db, { token: d.cfg.token, account: m[1]!, epoch, startBlock, indexedBlock })));
     }

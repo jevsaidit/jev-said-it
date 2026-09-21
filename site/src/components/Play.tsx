@@ -84,6 +84,11 @@ export function Play({ ticker }: { ticker: string }) {
     setPicks({});
     setShared([]);
     setTx({ kind: "idle" });
+    setHolder(null);
+    setClaims([]);
+    setUsed(null);
+    setCapNow(null);
+    setAnswered({});
   };
 
   // Keep account and chain in step with the wallet, including changes made inside the wallet.
@@ -121,6 +126,7 @@ export function Play({ ticker }: { ticker: string }) {
     setSkew(Number(head.timestamp) - Math.floor(Date.now() / 1000));
     setTick(Math.floor(Date.now() / 1000));
     const ep = await pub.readContract({ address: cfg.callLedger, abi: LEDGER_ABI, functionName: "currentEpoch" });
+    if (my !== seq.current) return;
     setChainEpoch(ep);
     // The feed can lag the chain by a cache window. Around an epoch change it can still list last
     // epoch's questions, and the contract would revert them with QuestionClosed after you paid gas:
