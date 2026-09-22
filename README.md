@@ -25,6 +25,15 @@ Nothing here is investment advice. Calls are free: nobody stakes tokens or bets 
    `PonsEscrowAdapter`, never to a person, then to the `FeeRouter`, which splits it on-chain: 50%
    buys the token for the rewards, 15% buys it to burn, 20% to the team in ETH, 10% ops, 5% compute.
 
+## The token
+
+1,000,000,000 $JEV, all of it sold on the Pons bonding curve: no presale, no team allocation, no
+vesting. When the curve fills, it graduates into a Uniswap v4 pool. Zero transfer tax: every swap pays
+Pons 1%, and about 0.70% of the volume comes back as creator fees to the `PonsEscrowAdapter`, a
+contract, never a person. The dev wallet buys about 2% of the supply inside the launch transaction and
+holds it; it is printed on the site and never takes rewards. Beyond that the team is paid only by its
+20% of the fees, in ETH.
+
 ## Playing
 
 Connect a browser wallet on the site, pick agree or disagree on the open questions, send them in one
@@ -39,7 +48,7 @@ receipt card to post on X: what it prints comes from the engine, never from the 
 | `contracts/` | Solidity (Foundry): fee router, call ledger, rewards distributor, Pons and Uniswap v4 adapters, the launch runbook and the security checklist |
 | `engine/` | the verdict engine (TypeScript): indexes the chain, opens questions, resolves them, scores, publishes roots, collects the fees and runs the buyback; public JSON feed |
 | `site/` | the public site (Next.js) |
-| `docs/` | the project draft and the engine spec |
+| `docs/` | the verdict engine spec |
 | `brand/` | the pixel-art mascot and banners, generated from code |
 
 ## Check it yourself
@@ -61,7 +70,7 @@ FORK_RPC_URL=<archive rpc> bash contracts/scripts/rehearse-launch-fork.sh
 bash site/scripts/e2e-play.sh
 
 # a live question: its hash must equal its id
-curl -s https://jevsaidit.com/api/feed/q/<id>.json | tr -d '\n' | cast keccak
+curl -s https://www.jevsaidit.com/api/feed/q/<id>.json | tr -d '\n' | cast keccak
 ```
 
 The fork test launches a token on the real Pons factory with our adapter as fee recipient, trades
@@ -70,6 +79,6 @@ to a winner's claim.
 
 ## Status
 
-Not launched. The contract address will be published here and on
-[@jevsaidit](https://x.com/jevsaidit) before launch. An address you see anywhere else first is not
-ours.
+Not launched. The contract address goes up here, on [jevsaidit.com](https://www.jevsaidit.com) and on
+[@jevsaidit](https://x.com/jevsaidit) the moment it exists. An address you see anywhere else first is
+not ours. There is no Telegram yet: any group using the name is not us.
