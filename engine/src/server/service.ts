@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { PublicClient } from "viem";
 import type pg from "pg";
-import { makeClient } from "../chain/client.js";
+import { errText, makeClient } from "../chain/client.js";
 import { type Config, type LedgerConfig, type RewardsConfig } from "../config.js";
 import type { Db } from "../db/db.js";
 import { runCycle } from "../indexer/cycle.js";
@@ -67,7 +67,7 @@ export async function serve(d: ServiceDeps): Promise<void> {
       lockClient?.release(true);
       lockClient = null;
       writer = false;
-      mark("writer", "BLIND", (e as Error).message.split("\n")[0]);
+      mark("writer", "BLIND", errText(e));
     }
     return writer;
   };
@@ -84,7 +84,7 @@ export async function serve(d: ServiceDeps): Promise<void> {
       const r = await fn();
       mark(name, r.state, r.detail);
     } catch (e) {
-      mark(name, "BLIND", (e as Error).message.split("\n")[0]);
+      mark(name, "BLIND", errText(e));
     }
   };
 
@@ -249,7 +249,7 @@ export async function serve(d: ServiceDeps): Promise<void> {
         genesis = (await ledgerMeta()).genesis;
         now = await chainNow();
       } catch (e) {
-        return send(res, 502, jsonOut({ state: "blind", error: (e as Error).message.split("\n")[0] }));
+        return send(res, 502, jsonOut({ state: "blind", error: errText(e) }));
       }
       const e = epochOf(now, genesis);
       return send(res, 200, jsonOut({ ...(await epochView(d.db, e, now)), genesis, now }));
@@ -299,7 +299,7 @@ export async function serve(d: ServiceDeps): Promise<void> {
     const hit = cacheable ? cached.get(path) : undefined;
     if (hit && Date.now() - hit.at < FEED_CACHE_MS) return send(res, hit.code, hit.body);
     if (cacheable) (res as ServerResponse & { cacheKey?: string }).cacheKey = path;
-    route(req, res).catch((e) => send(res, 500, jsonOut({ error: (e as Error).message.split("\n")[0] })));
+    route(req, res).catch((e) => send(res, 500, jsonOut({ error: errText(e) })));
   });
   await new Promise<void>((r) => server.listen(d.port, d.host, r));
   console.log(jsonOut({ serving: d.port, model: d.model?.id ?? null, ledger: d.lcfg?.callLedger ?? null }));

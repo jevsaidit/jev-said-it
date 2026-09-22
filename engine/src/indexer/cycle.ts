@@ -1,4 +1,5 @@
 import type { PublicClient } from "viem";
+import { errText } from "../chain/client.js";
 import type { Config } from "../config.js";
 import { type Db, getCursor } from "../db/db.js";
 import { indexTransfers, transferCursor } from "./transfers.js";
@@ -24,6 +25,6 @@ export async function runCycle(client: PublicClient, db: Db, cfg: Config, tokenC
     const lag = tLag > vLag ? tLag : vLag;
     return written > 0 ? { state: "OK", target, written, lag } : { state: "IDLE", target, lag };
   } catch (e) {
-    return { state: "BLIND", error: e instanceof Error ? e.message.split("\n")[0]! : String(e) };
+    return { state: "BLIND", error: errText(e) };
   }
 }

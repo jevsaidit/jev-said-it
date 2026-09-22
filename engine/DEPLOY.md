@@ -16,7 +16,8 @@ database: it can be redeployed or restarted at any time without losing anything.
 | variable | value | notes |
 |---|---|---|
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | reference to the Postgres service |
-| `RPC_URL` | `https://rpc.mainnet.chain.robinhood.com` | |
+| `RPC_URL` | `https://rpc.mainnet.chain.robinhood.com,https://rpc.ordofi.network` | comma-separated: the next one only when the first fails (22/09: the public endpoint stopped answering Railway for 5 minutes at launch). ordofi was the only alternative in the chain list that served the engine's `getLogs` (publicnode and drpc refused the ranges, arrowrpc was down) |
+| `CONFIRMATIONS` | `100` | 10 s under the head: covers a fallback node that lags the primary; default 20 |
 | `TOKEN` | $JEV address | after launch |
 | `LAUNCH_BLOCK` | launch block (runbook §4.4) | balances start from here |
 | `V4_START_BLOCK` | `LAUNCH_BLOCK - 1700000` | about 48h earlier: candidates need history |
