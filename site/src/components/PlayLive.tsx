@@ -4,7 +4,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { createPublicClient, createWalletClient, custom, type Abi, type Address, type EIP1193Provider, type Hex } from "viem";
 import { CHAINS, DISTRIBUTOR_ABI, LEDGER_ABI, REVERT_TEXT } from "@/lib/chains";
 import { isJev, said } from "@/lib/say";
-import { RULES } from "@/lib/site";
+import { RULES, SITE_URL } from "@/lib/site";
 import { cannotAddChain, useWallets } from "@/lib/wallets";
 import type { Config } from "./Play";
 import { WalletPicker } from "./WalletPicker";
@@ -29,7 +29,9 @@ const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 // X's post composer with the text filled in. The link is a share page whose card X renders;
 // what the card prints comes from the engine, not from this text.
 const postUrl = (text: string, path: string) =>
-  `https://x.com/intent/post?${new URLSearchParams({ text, url: `${window.location.origin}${path}` }).toString()}`;
+  // Always the canonical www URL, whatever host the page was opened on: X caches a card per URL, and a
+  // variant it cannot fetch (the bare domain over https) shows a stale card or none.
+  `https://x.com/intent/post?${new URLSearchParams({ text, url: `${SITE_URL}${path}` }).toString()}`;
 type Shared = { kind: "call"; id: Hex; symbol: string; p: number; model?: string; agree: boolean } | { kind: "win"; epoch: number; amount: string; jev: boolean };
 
 // A revert is shown by what it means, a rejection by what happened; anything else by viem's first line.

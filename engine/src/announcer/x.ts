@@ -84,6 +84,6 @@ export function forX(text: string, now: number = Date.now(), until: number = X_N
   const lines = text.split("\n").filter((l) => !HEX.test(l));
   const sig = lines.lastIndexOf("jev said it.");
   const at = sig > 0 ? sig - (lines[sig - 1] === "" ? 1 : 0) : lines.length;
-  lines.splice(at, 0, "receipts: jevsaidit.com");
+  lines.splice(at, 0, "receipts: www.jevsaidit.com");
   return lines.join("\n");
 }
