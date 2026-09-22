@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { PublicClient } from "viem";
 import type pg from "pg";
 import { errText, makeClient } from "../chain/client.js";
+import { CURVE_TIMEOUT_MS, curveView } from "./curve.js";
 import { type Config, type LedgerConfig, type RewardsConfig } from "../config.js";
 import type { Db } from "../db/db.js";
 import { runCycle } from "../indexer/cycle.js";
@@ -50,6 +51,7 @@ const WRITER_LOCK_KEY = 0x4a45_5653; // "JEVS"
 
 export async function serve(d: ServiceDeps): Promise<void> {
   const ledger = d.lcfg ? makeClient(d.lcfg.ledgerRpcUrl) : null;
+  const chainClient = makeClient(d.cfg.rpcUrl);
   const tasks: Record<string, TaskState> = {};
   let lastSeenAt = 0; // last index cycle in which the engine LOOKED at the chain (OK or IDLE)
   let lag: bigint | null = null; // blocks between the most-behind index and the head
@@ -254,6 +256,18 @@ export async function serve(d: ServiceDeps): Promise<void> {
       const e = epochOf(now, genesis);
       return send(res, 200, jsonOut({ ...(await epochView(d.db, e, now)), genesis, now }));
     }
+    if (path === "/curve") {
+      // Three states, like everything else that reads the chain: a failed read is 502, never "graduated: false".
+      try {
+        const view = await Promise.race([
+          curveView(chainClient, d.cfg.token as `0x${string}`),
+          new Promise((_, no) => setTimeout(() => no(new Error(`curve read did not answer in ${CURVE_TIMEOUT_MS}ms`)), CURVE_TIMEOUT_MS)),
+        ]);
+        return send(res, 200, jsonOut(view));
+      } catch (e) {
+        return send(res, 502, jsonOut({ state: "blind", error: errText(e) }));
+      }
+    }
     if (path === "/config") {
       // What a wallet needs to play: the ledger's chain and the three addresses. Read from the
       // engine's own configuration, so the site cannot point at a different contract than the one scored.
@@ -290,7 +304,7 @@ export async function serve(d: ServiceDeps): Promise<void> {
     }
     if (path === "/calibration") return send(res, 200, jsonOut(await calibration(d.db)));
     if (path === "/treasury") return send(res, 200, jsonOut(await treasuryOps(d.db)));
-    return send(res, 404, jsonOut({ error: "not found", routes: ["/health", "/config", "/holder/:address", "/epochs/current", "/epochs/:n", "/q/:id.json", "/leaderboard/:n", "/claim/:n/:address", "/calibration", "/treasury"] }));
+    return send(res, 404, jsonOut({ error: "not found", routes: ["/health", "/config", "/curve", "/holder/:address", "/epochs/current", "/epochs/:n", "/q/:id.json", "/leaderboard/:n", "/claim/:n/:address", "/calibration", "/treasury"] }));
   };
 
   const server = createServer((req, res) => {

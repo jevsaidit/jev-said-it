@@ -2,7 +2,7 @@
 // The browser only talks to this domain: no CORS to open on the engine, and the engine's
 // URL changes with an environment variable, without rebuilding.
 
-const ALLOWED = /^(epochs\/(current|\d+)|q\/0x[0-9a-fA-F]{64}\.json|leaderboard\/\d+|calibration|treasury|config|holder\/0x[0-9a-fA-F]{40})$/;
+const ALLOWED = /^(epochs\/(current|\d+)|q\/0x[0-9a-fA-F]{64}\.json|leaderboard\/\d+|calibration|treasury|curve|config|holder\/0x[0-9a-fA-F]{40})$/;
 
 const offline = (reason: string) => Response.json({ state: "offline", reason }, { status: 503, headers: { "cache-control": "no-store" } });
 

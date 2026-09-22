@@ -138,6 +138,10 @@ check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/card/win/0/$U2) $(curl -s
 [ "$(echo "$R" | jq -r '.error // empty')" ] && echo "   error: $(echo "$R" | jq -r .error) | $(echo "$R" | jq -r .panel)"
 
 check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/feed/treasury) $(curl -s $W/api/feed/treasury | jq -r 'type')" "200 array" "the treasury log is public through the site"
+# It may answer "not measurable" (502) off mainnet, but it must ANSWER: an unbounded read of it kept the
+# whole page loading on 22/09/2026, and the e2e only saw it as "the panel is empty".
+CURVE_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 $W/api/feed/curve || echo timeout)
+check "$(case $CURVE_CODE in 200|502) echo answers;; *) echo "$CURVE_CODE";; esac)" "answers" "the curve route answers within 8s"
 echo "4. two wallets installed, Phantom holding window.ethereum: the header asks, remembers, recovers"
 R=$(node $HERE/wallets.e2e.mjs $W)
 check "$(echo "$R" | jq -r '.picker | join(",")')" "Phantom,MetaMask" "both wallets are offered"

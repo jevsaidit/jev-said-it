@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 // The fees' path, from the engine's treasury log: every row carries the transaction that did it, so
 // nothing here needs trust. Amounts are the ones the contracts emitted (Forwarded, SwapProcessed).
 
+type Curve = { graduated: boolean; progressWei: string; thresholdWei: string; progressBps: number };
 type Op = { kind: string; tx: string | null; at: string; forwarded?: string; ethIn?: string; tokenOut?: string; burned?: string; toRewards?: string };
 
 const eth = (wei: bigint) => (Number(wei) / 1e18).toLocaleString("en-US", { maximumFractionDigits: 5 });
@@ -14,6 +15,7 @@ const when = (iso: string) => iso.slice(0, 16).replace("T", " ") + " UTC";
 
 export function Treasury({ ticker, explorer, router }: { ticker: string; explorer: string; router?: string }) {
   const [ops, setOps] = useState<Op[] | null | "blind">(null);
+  const [curve, setCurve] = useState<Curve | null>(null);
   useEffect(() => {
     let stop = false;
     const load = () =>
@@ -21,8 +23,18 @@ export function Treasury({ ticker, explorer, router }: { ticker: string; explore
         .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
         .then((d: Op[]) => !stop && setOps(d))
         .catch(() => !stop && setOps((cur) => (Array.isArray(cur) ? cur : "blind")));
+    const loadCurve = () =>
+      // Never let a slow dependency hold the page: the block simply does not show this line.
+      fetch("/api/feed/curve", { cache: "no-store", signal: AbortSignal.timeout(6_000) })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((c: Curve | null) => !stop && c && setCurve(c))
+        .catch(() => {});
     load();
-    const t = setInterval(load, 120_000);
+    loadCurve();
+    const t = setInterval(() => {
+      load();
+      loadCurve();
+    }, 120_000);
     return () => {
       stop = true;
       clearInterval(t);
@@ -56,6 +68,13 @@ export function Treasury({ ticker, explorer, router }: { ticker: string; explore
           <dd>{tok(sum(swaps, "toRewards"))}</dd>
         </div>
       </dl>
+      {curve && !curve.graduated && (
+        <p className="treasury__note">
+          The buyback starts when the curve graduates and the pool exists: {(curve.progressBps / 100).toFixed(1)}% of the way there
+          ({eth(BigInt(curve.progressWei))} of {eth(BigInt(curve.thresholdWei))} ETH). Until then the fees stay in the router, in ETH,
+          and nothing is bought with a price nobody can read.
+        </p>
+      )}
       {rows.length > 0 ? (
         <ul className="treasury__ops">
           {rows.map((o) => (
