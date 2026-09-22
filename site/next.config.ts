@@ -1,5 +1,13 @@
 import type { NextConfig } from "next";
 
+// A local-chain build (the e2e, never a real one) talks to anvil over http://127.0.0.1: the strict
+// connect-src below would block that fetch and the whole wallet flow would fail for a reason that has
+// nothing to do with the product. The loosening rides on the flag that already declares "this build
+// knows the local chain", so a production build cannot get it by accident. Found by the e2e itself:
+// the first run after the policy went live turned 18 wallet checks red.
+const LOCAL_CHAIN = process.env.NEXT_PUBLIC_ALLOW_ANVIL === "1";
+const CONNECT = ["'self'", "https:", "wss:", ...(LOCAL_CHAIN ? ["http://127.0.0.1:*", "http://localhost:*"] : [])].join(" ");
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
@@ -27,7 +35,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob:",
               "font-src 'self' data:",
-              "connect-src 'self' https: wss:",
+              `connect-src ${CONNECT}`,
               "form-action 'self'",
               "base-uri 'self'",
               "object-src 'none'",
