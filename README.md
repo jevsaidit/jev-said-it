@@ -93,6 +93,9 @@ to a winner's claim.
 | Timelock (24h, owns the four above) | `0xB39D54266b47356Cc239a579332B5C729C91b043` |
 | Dev wallet (bought 1.91% of the supply in the launch transaction, holds, no rewards) | `0xD8DC13844463157509d0c21840bed6cA1FE2B1e6` |
 
+All six of our contracts are source-verified with a full match (creation and runtime bytecode) on
+[Sourcify](https://sourcify.dev), which the explorer reads; the token itself is Pons' contract.
+
 Check them yourself: `owner()` on the router, the distributor and the ledger returns the timelock,
 `getMinDelay()` returns 86400, and the adapter's `router()` is the FeeRouter. An address you see
 anywhere else is not ours. There is no Telegram yet: any group using the name is not us.
