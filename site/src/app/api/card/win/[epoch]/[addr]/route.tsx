@@ -15,14 +15,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ epoch: string;
   const { fonts, mascot } = await cardAssets();
   return new ImageResponse(
     (
-      <Card mascot={mascot} footer={`$JEVSAIDIT  ·  ${SITE_HOST}  ·  #jevsaidit`}>
+      <Card mascot={mascot} footer={`$JEV  ·  ${SITE_HOST}  ·  #jevsaidit`}>
         <Label>{`EPOCH ${w.epoch}  ·  ${short(w.account)}`}</Label>
         {/* "Jev" only when Jev answered the whole epoch; a fallback model is named, never dressed as Jev. */}
         <Big color={C.hood}>{w.jev ? "I BEAT JEV." : "I BEAT THE MODEL."}</Big>
         {!w.jev && w.models.length > 0 && <Label>{`answered by ${w.models.join(", ")} (fallback)`}</Label>}
         <div style={{ display: "flex", height: 18 }} />
         <Mid color={C.gold}>{`+${tokens(w.amount)}`}</Mid>
-        <Mid color={C.gold}>$JEVSAIDIT</Mid>
+        <Mid color={C.gold}>$JEV</Mid>
         <Line color={C.dim}>bought on the market with trading fees.</Line>
       </Card>
     ),

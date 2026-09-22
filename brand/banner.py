@@ -71,7 +71,7 @@ f = ImageFont.truetype("MartianMono.ttf", 26); f.set_variation_by_axes([800, 112
 tb = D.textbbox((0, 0), "MATCH", font=f)
 D.text(((sx + 18) * SC - (tb[2] - tb[0]) // 2 + 2, (sy + 6) * SC - (tb[3] + tb[1]) // 2 + 2), "MATCH", font=f, fill=STAMP)
 # line under the title
-mono((260, 452), "$JEVSAIDIT · Robinhood Chain", 20, GREEN, 500)
+mono((260, 452), "$JEV · Robinhood Chain", 20, GREEN, 500)
 big.save("banner-1500x500.png")
 # Open Graph 1200x630: same scene, background extended above and below, no overlaid avatar
 og = Image.new("RGB", (1200, 630), BG); od = ImageDraw.Draw(og)

@@ -26,7 +26,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string; si
         : "no trade in the window: void";
   return new ImageResponse(
     (
-      <Card mascot={mascot} footer={`$JEVSAIDIT  ·  ${SITE_HOST}  ·  #jevsaidit`}>
+      <Card mascot={mascot} footer={`$JEV  ·  ${SITE_HOST}  ·  #jevsaidit`}>
         {/* Commitment: another model's answer is never published as Jev's. The label names who answered. */}
         <Label>{jev ? "JEV SAID" : `${(c.model || "UNKNOWN MODEL").toUpperCase()} SAID  (FALLBACK)`}</Label>
         <Big color={C.gold}>{said(c.p).toUpperCase()}</Big>

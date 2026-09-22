@@ -27,7 +27,7 @@ export interface Config {
   /** the chain of the token and its Transfers. In production it is the same as RPC_URL; in testnet
    *  trials the test token lives on 46630 while the Pons pools stay on mainnet */
   tokenRpcUrl: string;
-  /** the token whose balances are rebuilt: $JEVSAIDIT in production */
+  /** the token whose balances are rebuilt: $JEV in production */
   token: Address;
   /** block the Transfer indexer starts from (runbook §4.4, LAUNCH_BLOCK) */
   launchBlock: bigint;

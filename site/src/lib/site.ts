@@ -3,7 +3,7 @@
 
 const env = (v: string | undefined) => (v && v.trim() !== "" ? v.trim() : undefined);
 
-export const TICKER = env(process.env.NEXT_PUBLIC_TICKER) ?? "JEVSAIDIT";
+export const TICKER = env(process.env.NEXT_PUBLIC_TICKER) ?? "JEV";
 export const TOKEN_ADDRESS = env(process.env.NEXT_PUBLIC_TOKEN_ADDRESS);
 // Always the www host: the apex has no certificate, so a printed apex URL is a dead link in a browser.
 export const SITE_URL = env(process.env.NEXT_PUBLIC_SITE_URL) ?? "https://www.jevsaidit.com";

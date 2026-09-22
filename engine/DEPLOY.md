@@ -17,7 +17,7 @@ database: it can be redeployed or restarted at any time without losing anything.
 |---|---|---|
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` | reference to the Postgres service |
 | `RPC_URL` | `https://rpc.mainnet.chain.robinhood.com` | |
-| `TOKEN` | $JEVSAIDIT address | after launch |
+| `TOKEN` | $JEV address | after launch |
 | `LAUNCH_BLOCK` | launch block (runbook §4.4) | balances start from here |
 | `V4_START_BLOCK` | `LAUNCH_BLOCK - 1700000` | about 48h earlier: candidates need history |
 | `CALL_LEDGER` | CallLedger address | without it, the engine only indexes |
@@ -37,6 +37,12 @@ database: it can be redeployed or restarted at any time without losing anything.
 | `TELEGRAM_TEST_CHAT_ID` | one private chat | `test` only |
 | `PUBLIC_SITE_URL` | `https://www.jevsaidit.com` | the canonical site, linked from every post; that is also the default |
 | `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_SECRET` | OAuth 1.0a user context of @jevsaidit (developer app with write access) | **all four or none**: half of them throws at boot; none of them = X is not a channel and its posts are recorded as `unconfigured`, never sent later |
+
+Before these go on Railway, check them from a local file (never pasted in chat):
+`npx tsx --env-file=<file> scripts/check-announcer.ts` (from `engine/`). It verifies the bot, that it is an
+admin allowed to post in the channel, sends one message to the test chat, and asks X whose token it is
+(it must be @jevsaidit). It posts nothing in public. Exit 0 verified · 1 something to fix · 2 network.
+Without the chat ids it lists the chats the bot has seen, which is where the ids come from.
 | `X_DAILY_CAP` | `6` (default) | posts per UTC day on X. 2 slots are reserved for the epoch verdict and 1 for the buyback: a batch opening cannot exhaust the cap before the verdict |
 
 All the others have a sensible default: see `.env.example`.

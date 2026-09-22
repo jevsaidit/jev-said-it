@@ -49,7 +49,7 @@ will have tokens only after the first `processSwap`. This is the room that makes
 
 | When | What | Why not earlier / not later |
 |---|---|---|
-| **T0** | `Transfer` indexer of $JEVSAIDIT from `LAUNCH_BLOCK` | runbook §5.7: if it starts late, the epochs cannot be reconstructed |
+| **T0** | `Transfer` indexer of $JEV from `LAUNCH_BLOCK` | runbook §5.7: if it starts late, the epochs cannot be reconstructed |
 | **T0** | PoolManager `Swap` indexer for the candidate tokens | needed for the reference price and for resolution |
 | **T+10 min** | first epoch: questions + verdicts + `openQuestions` | public commitment of runbook §5.1–5.2 |
 | **T0 → always** | public JSON feed (questions, verdicts, outcomes) | it is the product: without a feed there is nothing to see |

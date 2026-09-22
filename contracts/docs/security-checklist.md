@@ -495,20 +495,22 @@ a sentinel that is not there.
       document becomes a false alarm at the first test added: this line said 69 three
       commits after they had become 72.)
 - [x] **Line coverage on `src/` ≥ 90%** — **it was 100% when measured**.
-      ⚠ **Not re-measured after `61c6faf` and the 2026-09-22 changes** (`ZeroMinOut`, the
-      `openQuestions` guards, `ZeroBudget`, the burn skip add lines and branches). The table and the
-      uncovered-branch list below are the last measurement, with the line numbers moved to where those
-      lines are today; treat the percentages as **unverified on HEAD** until the command is rerun.
+      Re-measured on HEAD on 2026-09-22 (table below).
       `forge coverage --report summary --no-match-path 'test/fork/*'`:
 
   | File | Lines | Statements | Branches | Functions |
   |---|---|---|---|---|
-  | `src/CallLedger.sol` | 100.00% (35/35) | 97.92% (47/48) | 85.71% (6/7) | 100.00% (6/6) |
-  | `src/FeeRouter.sol` | 100.00% (90/90) | 95.08% (116/122) | 66.67% (12/18) | 100.00% (13/13) |
-  | `src/PonsEscrowAdapter.sol` | 100.00% (18/18) | 95.24% (20/21) | 83.33% (5/6) | 100.00% (5/5) |
-  | `src/RewardsDistributor.sol` | 100.00% (67/67) | 100.00% (93/93) | 100.00% (23/23) | 100.00% (9/9) |
-  | `src/adapters/UniV4SwapAdapter.sol` | 100.00% (24/24) | 100.00% (27/27) | 100.00% (2/2) | 100.00% (4/4) |
-  | **`src/` total** | **100.00% (234/234)** | 97.43% (303/311) | 85.71% (48/56) | 100.00% (37/37) |
+  | `src/CallLedger.sol` | 100.00% (38/38) | 98.25% (56/57) | 90.00% (9/10) | 100.00% (6/6) |
+  | `src/FeeRouter.sol` | 100.00% (93/93) | 95.35% (123/129) | 70.00% (14/20) | 100.00% (13/13) |
+  | `src/PonsEscrowAdapter.sol` | 100.00% (19/19) | 95.65% (22/23) | 85.71% (6/7) | 100.00% (5/5) |
+  | `src/RewardsDistributor.sol` | 100.00% (71/71) | 100.00% (103/103) | 100.00% (26/26) | 100.00% (9/9) |
+  | `src/adapters/UniV4SwapAdapter.sol` | 100.00% (27/27) | 100.00% (34/34) | 100.00% (3/3) | 100.00% (4/4) |
+  | **`src/` total** | **100.00% (248/248)** | 97.69% (338/346) | 87.88% (58/66) | 100.00% (37/37) |
+
+  **Re-measured on 2026-09-22 on `0b74765`** (contracts last touched in `0cca5f7`): 84 passed, 0 failed.
+  Uncovered branches on `src/`: still **8**, same files as the list below (FeeRouter 6, CallLedger 1,
+  PonsEscrowAdapter 1); the branches added on 22/09 are all covered. The per-line list below was not
+  re-derived from lcov: its line numbers are the ones moved by hand.
 
   `setMaxEpochBudgetBps` was **the only function in the project without a single test** (4 lines
   uncovered, today `src/RewardsDistributor.sol:187-191`, before the fix). It was covered, not excluded.
@@ -551,6 +553,17 @@ a sentinel that is not there.
   ```
 
 ### Static analysis (Slither)
+
+> ✅ **Rerun on 2026-09-22 on `0b74765`** (`git log -1` on the contracts: `0cca5f7`), Slither 0.11.6, same
+> command: **17 results, the same 17** — same detectors, same functions, same counts per detector
+> (1 `arbitrary-send-eth`, 1 `reentrancy-balance`, 2 `unused-return`, 6 `missing-zero-check`,
+> 1 `reentrancy-events`, 6 `timestamp`). The code added on 22/09 (`openQuestions` guards, `ZeroBudget`,
+> burn skip) adds no result. Line numbers on HEAD: `PonsEscrowAdapter.claim()` `:50-59` (call `:52`);
+> `UniV4SwapAdapter.swapExactETHForToken()` `:54-98`; `FeeRouter.processSwap()` `:135-160` (call `:151`);
+> zero-checks `CallLedger:42,93`, `FeeRouter:71,190`, `RewardsDistributor:83,173`; timestamp in
+> `CallLedger.openQuestions` `:61-71`, `submit` `:73-91`, `RewardsDistributor.setEpochRoot` `:100-122`,
+> `claim` `:124-140`, `voidEpoch` `:146-156`, `sweepExpired` `:159-168`. The arguments below still hold;
+> the table keeps the `e0d1011` numbers as the record of the first run. The note below is kept as history.
 
 > ⚠ **EXPIRED — by this section's own rule, on 2026-09-22.** The rule below says: if `git log -1` on
 > `FeeRouter.sol` / `UniV4SwapAdapter.sol` names a commit other than `e0d1011`, the section has

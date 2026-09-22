@@ -55,8 +55,8 @@ export class Fmt {
 }
 
 const DENY = [
-  /\bbuy\s+\$?jevsaidit\b/i,
-  /\$jevsaidit\s+(will|to|gonna)\s+(pump|moon|run|send)/i,
+  /\bbuy\s+\$?jev\b/i,
+  /\$jev\b\s+(will|to|gonna)\s+(pump|moon|run|send)/i,
   /\b\d+x\b/i,
   /\bguarante/i,
   /\bprice (target|prediction)\b/i,
@@ -65,7 +65,7 @@ const DENY = [
 
 export function guard(text: string, f: Fmt): { ok: true } | { ok: false; reason: string } {
   for (const d of DENY) if (d.test(text)) return { ok: false, reason: `forbidden: ${d}` };
-  let rest = text.replace(/https?:\/\/\S+/g, " ").replace(/0x[0-9a-fA-F…]+/g, " ").replace(/#jevsaidit|\$JEVSAIDIT/g, " ");
+  let rest = text.replace(/https?:\/\/\S+/g, " ").replace(/0x[0-9a-fA-F…]+/g, " ").replace(/#jevsaidit|\$JEV\b/g, " ");
   for (const s of [...f.produced].sort((a, b) => b.length - a.length)) rest = rest.split(s).join(" ");
   for (const c of CONSTANTS) rest = rest.split(c).join(" ");
   const digit = rest.match(/\d/);
@@ -128,14 +128,14 @@ export function render(e: AnnounceEvent, site: string): { telegram: string | nul
     case "swap": {
       const text = post(
         "the fees came in.",
-        `${f.eth(e.ethIn)} bought $JEVSAIDIT. ${f.tokens(e.burned)} burned. the rest pays the callers.`,
+        `${f.eth(e.ethIn)} bought $JEV. ${f.tokens(e.burned)} burned. the rest pays the callers.`,
         `tx: ${EXPLORER}/tx/${e.tx}`,
       );
       return { telegram: text, x: text, fmt: f };
     }
     case "pin": {
       const text = post(
-        "hold $JEVSAIDIT, get calls.",
+        "hold $JEV, get calls.",
         `${CONSTANTS[0]} = ${CONSTANTS[2]}. ${CONSTANTS[1]} = ${CONSTANTS[3]}.`,
         "be right, get paid from the fees.",
         "be wrong, lose nothing but pride.",

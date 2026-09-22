@@ -48,9 +48,9 @@ describe("render", () => {
     const texts = new Set(Array.from({ length: 12 }, (_, i) => render({ ...e, key: `outcome:0x${i}` }, site).telegram));
     expect(texts.size).toBeGreaterThan(2);
   });
-  it("$JEVSAIDIT appears only in posts about the token", () => {
-    expect(render(events[0]!, site).telegram).not.toContain("$JEVSAIDIT");
-    expect(render(events[6]!, site).telegram).toContain("$JEVSAIDIT");
+  it("$JEV appears only in posts about the token", () => {
+    expect(render(events[0]!, site).telegram).not.toContain("$JEV");
+    expect(render(events[6]!, site).telegram).toContain("$JEV");
   });
 });
 
@@ -67,7 +67,7 @@ describe("guard", () => {
   });
   it("refuses shilling our own token", () => {
     const f = new Fmt();
-    expect(guard(`buy $JEVSAIDIT now\n\n${SIGNATURE}`, f).ok).toBe(false);
-    expect(guard(`$JEVSAIDIT to the moon, 100x\n\n${SIGNATURE}`, f).ok).toBe(false);
+    expect(guard(`buy $JEV now\n\n${SIGNATURE}`, f).ok).toBe(false);
+    expect(guard(`$JEV to the moon, 100x\n\n${SIGNATURE}`, f).ok).toBe(false);
   });
 });

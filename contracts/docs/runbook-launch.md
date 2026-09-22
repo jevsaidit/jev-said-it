@@ -1,7 +1,7 @@
-# Launch runbook — Jev Said It ($JEVSAIDIT) on Pons v2
+# Launch runbook — Jev Said It ($JEV) on Pons v2
 
 Chain: **Robinhood Chain, id 4663**. Testnet: **46630**.
-Identity: name **Jev Said It**, ticker **$JEVSAIDIT**, domain **jevsaidit.com**
+Identity: name **Jev Said It**, ticker **$JEV**, domain **jevsaidit.com**
 (defensive **jevsaidit.fun**, **jevsaidit.xyz**), X handle **@jevsaidit**, engine **@jevsaidit_bot**.
 
 This document is read on launch day, with real money at stake. Every step has:
@@ -36,7 +36,7 @@ this is only an operational reminder**.
 | `hookFeeBps` | `100` (1%) | `hook.hookFeeBps()` |
 | `CREATOR_FEE_RECIPIENT_TIMELOCK` | `259200` (3 days) | `factory.CREATOR_FEE_RECIPIENT_TIMELOCK()` |
 | `CREATOR_FEE_RECIPIENT_EXECUTION_WINDOW` | `259200` (3 days) | `factory.CREATOR_FEE_RECIPIENT_EXECUTION_WINDOW()` |
-| PoolKey | `currency0=0x0` (ETH), `currency1=$JEVSAIDIT`, `fee=0`, `tickSpacing=200`, `hooks=memeHook` | `addresses.md` |
+| PoolKey | `currency0=0x0` (ETH), `currency1=$JEV`, `fee=0`, `tickSpacing=200`, `hooks=memeHook` | `addresses.md` |
 
 Reread them before launch (30 seconds, and it tells you whether Pons has changed anything):
 
@@ -152,12 +152,12 @@ Operating rules for whoever computes `minOut` for `FeeRouter.processSwap(minOut)
 3. **Where `quote_gross` comes from.** *(The engine does this itself since 21/09: `engine/src/treasury/quote.ts`
    computes the exact in-range output from the pool's `slot0` and `liquidity` — checked against 10,398
    real buys — and re-reads the hook fee and creator tax on-chain every pass. QuoterV4 below is not
-   implemented. The rest of this point is kept as the reasoning.)* The $JEVSAIDIT pool does not exist until the token graduates, so
+   implemented. The rest of this point is kept as the reasoning.)* The $JEV pool does not exist until the token graduates, so
    the quote cannot be precomputed today. In steady state, in order of preference:
    - v4-periphery's `QuoterV4` / `quoteExactInputSingle` on the §0 PoolKey, in `eth_call` at the
      same block the transaction starts from — it is the quote the hook has not yet taxed,
      so it is already the **gross** the formula needs;
-   - failing that, the PoolManager's `slot0` for the $JEVSAIDIT PoolId and a price derived from the tick,
+   - failing that, the PoolManager's `slot0` for the $JEV PoolId and a price derived from the tick,
      remembering that it ignores the order's price impact;
    - **never** a price taken from an aggregator or from Dexscreener: that one is already net of the hook's
      cut, and applying `(1 - haircut)` to it again discounts twice.
@@ -165,14 +165,14 @@ Operating rules for whoever computes `minOut` for `FeeRouter.processSwap(minOut)
    discounting 1% after a tax increase makes every `processSwap` revert (and the swap bucket
    stays stuck until someone notices).
 5. The real value of our pool is reread from the two legs of the `HookFeeCollected` event of
-   a swap on $JEVSAIDIT, or from the word at index 8 of `factory.getLaunchedToken($JEVSAIDIT)`.
+   a swap on $JEV, or from the word at index 8 of `factory.getLaunchedToken($JEV)`.
    After launch this check is step 4.5.
 
 ### 1.3 The team receives no supply: it is paid from the fees
 
 The team **receives no share of the supply**. No reserved allocation, no purchase
 on the curve, no vesting — because there is nothing to vest. At launch the team wallets
-hold **zero $JEVSAIDIT**, and they keep holding zero.
+hold **zero $JEV**, and they keep holding zero.
 
 The compensation is a **recurring share of the trading fees**: `teamBps = 2000`, i.e. **20%
 of the ETH** that enters the `FeeRouter`, accumulated in the `teamBalance` bucket and withdrawable **only** by the
@@ -403,7 +403,7 @@ team buys nothing.
 **and** the good UniversalRouter `0x8876789976dEcBfCbBbe364623C63652db8C0904` are there, at the same
 addresses as mainnet, but **PonsV2LaunchFactory and PonsV2FeeEscrow do NOT exist on testnet**
 (`cast code` returns `0x`). So on testnet a real token **cannot** be launched on Pons, and
-without a factory there is no $JEVSAIDIT pool to try a real swap on. The dress rehearsal uses
+without a factory there is no $JEV pool to try a real swap on. The dress rehearsal uses
 the mocks; the swap path is verified only on the mainnet fork (fork test, §2).
 
 > Correction of 2026-09-20: the previous version said the UniversalRouter was also missing on
@@ -774,7 +774,7 @@ by hand from the Blockscout UI.
 > SIG='launchToken((string,string,string,string,(string,string,string,string,string),address,uint16,bool,bytes32,bytes32),uint256,address)'
 > FEE=$(cast call $FACTORY 'launchFee()(uint256)' --rpc-url $RPC | awk '{print $1}')   # cast prints "500000000000000 [5e14]": the suffix is expected
 > need FEE && cast send $FACTORY "$SIG" \
->   "(\"Jev Said It\",\"JEVSAIDIT\",\"<image url>\",\"<description>\",(\"\",\"\",\"\",\"\",\"\"),$PONS_ESCROW_ADAPTER,0,false,0x0000000000000000000000000000000000000000000000000000000000000000,$(cast keccak jevsaidit-launch))" \
+>   "(\"Jev Said It\",\"JEV\",\"<image url>\",\"<description>\",(\"\",\"\",\"\",\"\",\"\"),$PONS_ESCROW_ADAPTER,0,false,0x0000000000000000000000000000000000000000000000000000000000000000,$(cast keccak jevsaidit-launch))" \
 >   0 0x0000000000000000000000000000000000000000 --value $FEE --rpc-url $RPC --private-key <LAUNCH_EOA_KEY>
 > ```
 > Fields in order: name, symbol, image, description, five socials, **creator fee recipient = the
@@ -1537,7 +1537,7 @@ rehearsal: the engine refuses a database that belongs to another ledger and woul
 - **5.5 — first `processSwap`: sent by the engine, not by hand.** See §6.1. Since `FEE_ROUTER` is
   set (step 4) the treasury task sends one `processSwap` per epoch, at a secret time inside the
   epoch, only if the bucket is ≥ 0.005 ETH, with `minOut` from the pool's own state. It is still the
-  very first time `minOut` is computed on the $JEVSAIDIT pool, which did not exist until yesterday:
+  very first time `minOut` is computed on the $JEV pool, which did not exist until yesterday:
   read the first `SwapProcessed` against the quote on `/treasury` (§6.1 point 3).
 - **5.6 — first 72 hours**: **the splits are not changed.** If the data says they must change, they
   change on day 4, via the timelock, with 24h of public notice.
@@ -1548,7 +1548,7 @@ rehearsal: the engine refuses a database that belongs to another ledger and woul
 
 The engine's requirement is **not** "an archive RPC is needed". It is:
 
-> **the engine indexes the $JEVSAIDIT `Transfer` events from the launch block (`LAUNCH_BLOCK`,
+> **the engine indexes the $JEV `Transfer` events from the launch block (`LAUNCH_BLOCK`,
 > §4.4) and derives per-block balances from them, keeping its own book.**
 
 The balance check at the start of an epoch thus becomes a read of a local table, not a

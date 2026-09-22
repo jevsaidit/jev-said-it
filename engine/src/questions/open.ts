@@ -54,12 +54,21 @@ const ERC20_SYMBOL = parseAbi(["function symbol() view returns (string)"]);
  *  token: a URL, an @handle or a sentence in there would be printed verbatim by the announcer. */
 export const SYMBOL_RE = /^[A-Za-z0-9_.-]{1,12}$/;
 
+/** Our own ticker. Our token is never a candidate (candidates.ts), so any other token calling itself
+ *  JEV is a clone (seven on Robinhood Chain on 22/09/2026): printing "$JEV up?" about one of them would
+ *  read as a verdict on ours. Such a token is shown by its address, like one without a symbol. */
+export const OWN_TICKER = "JEV";
+
+export function displaySymbol(s: unknown): string | null {
+  return typeof s === "string" && SYMBOL_RE.test(s) && s.toUpperCase() !== OWN_TICKER ? s : null;
+}
+
 /** The ticker, if the token exposes a plain one. A token without symbol() or with an odd symbol() blocks nothing. */
 async function symbolOf(data: PublicClient | undefined, token: string): Promise<string | null> {
   if (!data) return null;
   try {
     const s = await data.readContract({ address: token as `0x${string}`, abi: ERC20_SYMBOL, functionName: "symbol" });
-    return typeof s === "string" && SYMBOL_RE.test(s) ? s : null;
+    return displaySymbol(s);
   } catch {
     return null;
   }

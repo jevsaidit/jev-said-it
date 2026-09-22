@@ -63,7 +63,7 @@ check "$(cast call $PONS_ESCROW_ADAPTER 'router()(address)' --rpc-url $A)" "$ZA"
 echo "§4.4 launch on Pons v2 from the launch EOA (not the deploy key)"
 FEE=$(cast call $FACTORY 'launchFee()(uint256)' --rpc-url $A | awk '{print $1}')
 SIG='launchToken((string,string,string,string,(string,string,string,string,string),address,uint16,bool,bytes32,bytes32),uint256,address)'
-RC=$(cast send $FACTORY "$SIG" "(\"Jev Said It\",\"JEVSAIDIT\",\"\",\"rehearsal\",(\"\",\"\",\"\",\"\",\"\"),$PONS_ESCROW_ADAPTER,0,false,$Z,$(cast keccak jsi-rehearsal-$RANDOM))" 0 $ZA \
+RC=$(cast send $FACTORY "$SIG" "(\"Jev Said It\",\"JEV\",\"\",\"rehearsal\",(\"\",\"\",\"\",\"\",\"\"),$PONS_ESCROW_ADAPTER,0,false,$Z,$(cast keccak jsi-rehearsal-$RANDOM))" 0 $ZA \
   --value $FEE --private-key $LAUNCH_PK --rpc-url $A --json)
 export JEVSAID_TOKEN=0x$(echo "$RC" | jq -r '.logs[] | select(.topics[0]=="0x8d4aad4953d0ca700d468f3753aa14432d1b35b43ec6409f051fb6aa43a89607") | .topics[1][26:]')
 LAUNCH_TX=$(echo "$RC" | jq -r .transactionHash); LAUNCH_BLOCK=$(cast tx $LAUNCH_TX blockNumber --rpc-url $A)
@@ -149,7 +149,7 @@ check "$(echo "$OUT" | jq -r .state)" "OK" "treasury pass succeeded"
 check "$(echo "$OUT" | jq -r .claimed)" "$OWED" "claimed exactly what the escrow owed"
 TEAMB=$(cast call $FEE_ROUTER 'teamBalance()(uint256)' --rpc-url $A 2>/dev/null | awk '{print $1}')
 echo "   team bucket after the split: ${TEAMB:-n/a} wei (20% of the claim, withdrawn by TEAM_WALLET)"
-check "$([ "$(cast call $JEVSAID_TOKEN 'balanceOf(address)(uint256)' $DIST --rpc-url $A | awk '{print $1}')" != "0" ] && echo yes)" "yes" "rewards distributor holds \$JEVSAIDIT bought from the fees"
+check "$([ "$(cast call $JEVSAID_TOKEN 'balanceOf(address)(uint256)' $DIST --rpc-url $A | awk '{print $1}')" != "0" ] && echo yes)" "yes" "rewards distributor holds \$JEV bought from the fees"
 
 echo "repo hygiene: no rehearsal record under broadcast/"
 check "$(ls $CONTRACTS/broadcast 2>/dev/null | wc -l)" "0" "contracts/broadcast/ untouched"

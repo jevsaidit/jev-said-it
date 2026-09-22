@@ -140,6 +140,7 @@ Taken on 20/09:
 - Team share: **25% bought on the curve at launch, no vesting**, publicly declared
 - Rename of 20/09: `Jev Says` dropped after checking the handles — `jevsays.com` has been registered since 16/09/2026 and already hosts a "Jev Says" app (consumer, powered by Jev, non-token), and `@jevsays` on X is a dormant account from 2009. `Jev Say` is also taken (`@jevsay` active, `jevsay.com` registered on 19/09). New name **Jev Said It / $JEVSAIDIT**: X, Telegram, GitHub and .com/.fun/.xyz all free, clean ticker on Dexscreener (checks of 20/09). Channels and conventions are in a separate social plan, not in this repository
 - Execution: contracts plan 1/4 in progress, subagent-driven
+- **Ticker changed on 22/09/2026: $JEV** (name, domain and handles stay Jev Said It / jevsaidit). Decision taken knowing what the 20/09 point above says: on 22/09 seven other tokens called JEV were on Robinhood Chain (OpenJEV the largest). Consequence handled in the engine: a candidate whose symbol is JEV is shown by address, never as "$JEV" (`OWN_TICKER` in `engine/src/questions/open.ts`). The text above is kept as the record of 20/09
 
 Still open:
 1. Team and development budget: three people for three weeks, or an MVP without the Terminal?
