@@ -3,6 +3,8 @@ import { Addresses } from "@/components/Addresses";
 import { LiveFeed } from "@/components/LiveFeed";
 import { Play } from "@/components/Play";
 import { Receipt } from "@/components/Receipt";
+import { StartHere } from "@/components/StartHere";
+import { Status } from "@/components/Status";
 import { Record } from "@/components/Record";
 import { Treasury } from "@/components/Treasury";
 import { WalletButton } from "@/components/WalletButton";
@@ -173,6 +175,8 @@ export default function Home() {
                   </span>
                 </p>
               )}
+              <Status ticker={TICKER} />
+              <StartHere />
             </div>
 
             <div className="hero__mascot">

@@ -45,6 +45,8 @@ try {
   await page.locator(".play__stats").waitFor({ timeout: 20_000 });
   await page.waitForFunction(() => !document.querySelector(".play__stats")?.textContent?.includes("—"), null, { timeout: 20_000 });
   out.before = await text();
+  // The live strip: the epoch and the countdown, from the engine's own clock.
+  out.strip = (await page.locator(".status--live").innerText().catch(() => "")).replace(/\s+/g, " ").trim();
   // The header button follows the same wallet: the shim is on anvil, so it must ask to switch.
   out.headerWallet = (await page.locator(".nav__wallet").innerText()).trim();
 

@@ -73,6 +73,7 @@ R=$(browse $U1 call u1-call)
 has "$(echo "$R" | jq -r .before)" "100,000" "the panel shows the balance held at epoch start"
 has "$(echo "$R" | jq -r .before)" "10 of 10" "10 calls left: 100k tokens / 10k per call"
 check "$(echo "$R" | jq -r .questions)" 3 "the three open questions are listed"
+has "$(echo "$R" | jq -r .strip)" "question" "the live strip names the open questions"
 QID=$(get /epochs/current | jq -r '.questions[0].id // "none"')
 check "$(curl -s -o /dev/null -w '%{http_code}' $W/q/$QID) $(curl -s -o /dev/null -w '%{http_code} %{content_type}' $W/api/card/q/$QID)" "200 200 image/png" "each question has its own page and card"
 check "$(echo "$R" | jq -r .headerWallet)" "Switch to Robinhood Chain" "the header wallet button sees the account and the wrong network"
@@ -139,6 +140,7 @@ check "$(curl -s -o $LOG/win.png -w '%{http_code} %{content_type}' $W/api/card/w
 check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/card/win/0/$U2) $(curl -s -o /dev/null -w '%{http_code}' $W/w/0/$U2)" "404 404" "no card and no page for a reward that was not published"
 [ "$(echo "$R" | jq -r '.error // empty')" ] && echo "   error: $(echo "$R" | jq -r .error) | $(echo "$R" | jq -r .panel)"
 
+has "$(curl -s $W | tr -d '\n')" "ponsfamily.com/launchpad/" "the start box links where to buy"
 check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/feed/calibration) $(curl -s $W/api/feed/calibration | jq -r 'has("resolved")')" "200 true" "Jev's record is public through the site"
 check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/feed/treasury) $(curl -s $W/api/feed/treasury | jq -r 'type')" "200 array" "the treasury log is public through the site"
 # It may answer "not measurable" (502) off mainnet, but it must ANSWER: an unbounded read of it kept the
