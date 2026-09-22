@@ -73,6 +73,8 @@ R=$(browse $U1 call u1-call)
 has "$(echo "$R" | jq -r .before)" "100,000" "the panel shows the balance held at epoch start"
 has "$(echo "$R" | jq -r .before)" "10 of 10" "10 calls left: 100k tokens / 10k per call"
 check "$(echo "$R" | jq -r .questions)" 3 "the three open questions are listed"
+QID=$(get /epochs/current | jq -r '.questions[0].id // "none"')
+check "$(curl -s -o /dev/null -w '%{http_code}' $W/q/$QID) $(curl -s -o /dev/null -w '%{http_code} %{content_type}' $W/api/card/q/$QID)" "200 200 image/png" "each question has its own page and card"
 check "$(echo "$R" | jq -r .headerWallet)" "Switch to Robinhood Chain" "the header wallet button sees the account and the wrong network"
 check "$(echo "$R" | jq -r .submitLabel)" "Submit 3 calls" "the submit button counts the picks"
 has "$(echo "$R" | jq -r .tx)" "Confirmed on-chain" "the transaction is confirmed"

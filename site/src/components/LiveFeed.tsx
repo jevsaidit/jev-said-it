@@ -112,7 +112,8 @@ export function LiveFeed({ ticker }: { ticker: string }) {
         qs.map((q, i) => (
           <div className="feed__row" key={q.id ?? i}>
             {q.id ? (
-              <a href={`/api/feed/q/${q.id}.json`} title={`Receipt ${q.id}`}>
+              // The question's own page: the receipt is one click further, and the link is shareable.
+              <a href={`/q/${q.id}`} title="This question, with its receipt">
                 {q.symbol ? `$${q.symbol}` : (q.token ?? q.id)}
                 <span className="feed__arrow" aria-hidden>
                   {" "}
