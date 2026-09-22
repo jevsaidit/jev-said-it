@@ -74,6 +74,7 @@ has "$(echo "$R" | jq -r .before)" "100,000" "the panel shows the balance held a
 has "$(echo "$R" | jq -r .before)" "10 of 10" "10 calls left: 100k tokens / 10k per call"
 check "$(echo "$R" | jq -r .questions)" 3 "the three open questions are listed"
 has "$(echo "$R" | jq -r .strip)" "question" "the live strip names the open questions"
+check "$(curl -s $W/api/callers | jq -r 'if .callers >= 0 then "counts" else "no" end')" "counts" "the callers of this epoch are counted from the ledger's events"
 QID=$(get /epochs/current | jq -r '.questions[0].id // "none"')
 check "$(curl -s -o /dev/null -w '%{http_code}' $W/q/$QID) $(curl -s -o /dev/null -w '%{http_code} %{content_type}' $W/api/card/q/$QID)" "200 200 image/png" "each question has its own page and card"
 has "$(curl -s $W/q/$QID | tr -d '\n')" "x.com/intent/post" "the question page can be passed on with one click"

@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 
 type Feed = { epoch: number; now?: number; questions?: Array<{ status?: string; deadline?: number }> };
 type Curve = { graduated: boolean; progressWei: string; thresholdWei: string; progressBps: number };
+type Callers = { epoch: number; callers: number; calls: number };
 
 const left = (sec: number) => {
   if (sec <= 0) return null;
@@ -20,6 +21,7 @@ const eth = (wei: string) => (Number(BigInt(wei)) / 1e18).toFixed(2);
 export function Status({ ticker }: { ticker: string }) {
   const [feed, setFeed] = useState<Feed | null>(null);
   const [curve, setCurve] = useState<Curve | null>(null);
+  const [callers, setCallers] = useState<Callers | null>(null);
   const [skew, setSkew] = useState(0);
 
   useEffect(() => {
@@ -32,6 +34,10 @@ export function Status({ ticker }: { ticker: string }) {
           setFeed(d);
           if (d.now) setSkew(d.now - Math.floor(Date.now() / 1000));
         })
+        .catch(() => {});
+      fetch("/api/callers", { cache: "no-store", signal: AbortSignal.timeout(9_000) })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((c: Callers | null) => !stop && c && setCallers(c))
         .catch(() => {});
       fetch("/api/feed/curve", { cache: "no-store", signal: AbortSignal.timeout(6_000) })
         .then((r) => (r.ok ? r.json() : null))
@@ -61,6 +67,12 @@ export function Status({ ticker }: { ticker: string }) {
         </>
       ) : (
         <> · no question open right now</>
+      )}
+      {callers && callers.callers > 0 && (
+        <>
+          {" "}
+          · {callers.callers} wallet{callers.callers === 1 ? "" : "s"} called ({callers.calls} call{callers.calls === 1 ? "" : "s"})
+        </>
       )}
       {curve && !curve.graduated && (
         <>

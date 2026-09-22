@@ -18,7 +18,7 @@ export type Blind = typeof BLIND;
 
 const ENGINE = () => process.env.ENGINE_FEED_URL?.trim().replace(/\/+$/, "");
 
-async function engine<T>(p: string): Promise<T | null | Blind> {
+export async function engine<T>(p: string): Promise<T | null | Blind> {
   const base = ENGINE();
   if (!base) return BLIND;
   try {
