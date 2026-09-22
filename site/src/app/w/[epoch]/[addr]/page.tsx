@@ -11,19 +11,25 @@ export const dynamic = "force-dynamic";
 const BRAND_IMAGE = "/brand/og-jev-1200x630.png";
 const description = "Best-calibrated calls get paid in $JEV, bought on the market with trading fees.";
 
+// This page's URL carries a wallet. Sharing it is the holder's own choice — the button exists — but
+// nothing here should turn the site into a searchable index of who holds what: the card still renders
+// on X (og: tags are read directly, not from an index), the crawlers are asked to stay out.
+const NOINDEX = { index: false, follow: false } as const;
+
 export async function generateMetadata({ params }: P): Promise<Metadata> {
   const { epoch, addr } = await params;
   const w = await winCard(epoch, addr);
   if (w === BLIND) {
     const title = "Jev said it.";
-    return { title, description, openGraph: { title, images: [{ url: BRAND_IMAGE, width: 1200, height: 630 }] }, twitter: { card: "summary_large_image", title, images: [BRAND_IMAGE] } };
+    return { title, description, robots: NOINDEX, openGraph: { title, images: [{ url: BRAND_IMAGE, width: 1200, height: 630 }] }, twitter: { card: "summary_large_image", title, images: [BRAND_IMAGE] } };
   }
-  if (!w) return {};
+  if (!w) return { robots: NOINDEX };
   const title = `I beat ${w.jev ? "Jev" : "the model"}: +${tokens(w.amount)} $JEV in epoch ${w.epoch}.`;
   const image = `/api/card/win/${epoch}/${addr}`;
   return {
     title,
     description,
+    robots: NOINDEX,
     openGraph: { title, images: [{ url: image, width: 1200, height: 630 }] },
     twitter: { card: "summary_large_image", title, images: [image] },
   };

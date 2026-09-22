@@ -15,8 +15,12 @@ export function proxy(req: NextRequest) {
       from = "unknown";
     }
   }
+  // `/w/<epoch>/<address>` carries a person: their wallet, with a timestamp, in the platform's logs
+  // for as long as the platform keeps them. The count we actually wanted is "how many opened a
+  // wallet page", which the shape answers just as well. So the address never reaches the log.
+  const view = req.nextUrl.pathname.replace(/0x[0-9a-fA-F]{40}/g, "0x…");
   // One flat line, easy to count in the platform's log search.
-  console.log(JSON.stringify({ view: req.nextUrl.pathname, from, at: new Date().toISOString() }));
+  console.log(JSON.stringify({ view, from, at: new Date().toISOString() }));
   return NextResponse.next();
 }
 
