@@ -3,6 +3,7 @@ import { Addresses } from "@/components/Addresses";
 import { LiveFeed } from "@/components/LiveFeed";
 import { Play } from "@/components/Play";
 import { Receipt } from "@/components/Receipt";
+import { Record } from "@/components/Record";
 import { Treasury } from "@/components/Treasury";
 import { WalletButton } from "@/components/WalletButton";
 import { CHAIN, DEV, FEE_ROUTER_ADDRESS, FEE_SPLIT, LEDGER, LINKS, RULES, SITE_URL, TICKER, TIMELOCK_ADDRESS, TOKEN_ADDRESS } from "@/lib/site";
@@ -404,6 +405,7 @@ skill = (b − y)² − brier`}</div>
               is published every epoch, including the epochs it loses.
             </p>
             <LiveFeed ticker={TICKER} />
+            <Record />
           </div>
         </section>
 

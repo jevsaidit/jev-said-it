@@ -32,8 +32,17 @@ const RECENT_SEC = 2 * 24 * 3600;
 export async function collectEvents(db: Db, now: number): Promise<Array<{ event: AnnounceEvent; channels: Array<"telegram" | "x"> }>> {
   const out: Array<{ event: AnnounceEvent; channels: Array<"telegram" | "x"> }> = [];
   const qs = (await db.query<QRow>("SELECT id, epoch, deadline, tx_hash, token, symbol, json, outcome FROM questions WHERE status = 'OPEN' AND deadline > $1 ORDER BY deadline, id", [now - RECENT_SEC])).rows;
-  for (const b of batchesFrom(qs)) {
-    out.push({ event: { kind: "batch_opened", key: `open:${b.tx}`, epoch: b.epoch, deadline: b.deadline, questions: b.questions.map(toQ) }, channels: ["telegram", "x"] });
+  const batches = batchesFrom(qs);
+  // One "epoch is open" per epoch on X, not one per batch: the engine opens a batch every couple of
+  // hours (12 a day), and first-come-first-served they spend the whole daily cap, so the epoch's
+  // verdict and the buyback never get a slot. Telegram keeps every batch. (22/09/2026: epoch 1's
+  // opening was withheld by the cap, silently.)
+  const firstOfEpoch = new Map<number, string>();
+  for (const b of [...batches].sort((a, z) => a.deadline - z.deadline)) if (!firstOfEpoch.has(b.epoch)) firstOfEpoch.set(b.epoch, b.tx);
+  for (const b of batches) {
+    // A "calls are open" post after they closed is noise: X only while the batch can still be called.
+    const onX = firstOfEpoch.get(b.epoch) === b.tx && now < b.deadline;
+    out.push({ event: { kind: "batch_opened", key: `open:${b.tx}`, epoch: b.epoch, deadline: b.deadline, questions: b.questions.map(toQ) }, channels: onX ? ["telegram", "x"] : ["telegram"] });
     if (now < b.deadline && now >= b.deadline - CLOSING_WINDOW_SEC) {
       out.push({ event: { kind: "closing_soon", key: `closing:${b.tx}`, epoch: b.epoch, deadline: b.deadline, count: b.questions.length }, channels: ["telegram"] });
     }

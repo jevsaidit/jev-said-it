@@ -38,7 +38,10 @@ export async function announce(db: Db, sender: Sender, o: { site: string; xDaily
       const text = channel === "x" ? r.x : r.telegram;
       if (!text) continue;
       const prev = (await db.query<{ status: string; attempts: number }>("SELECT status, attempts FROM announcements WHERE event_key = $1 AND channel = $2", [event.key, channel])).rows[0];
-      if (prev && (prev.status !== "failed" || prev.attempts >= MAX_ATTEMPTS)) {
+      // "capped" is not a verdict on the post, it is a verdict on the day: it may fit later, so it is
+      // reconsidered on the next cycles (the collector drops it once it is no longer worth posting).
+      const retryable = prev?.status === "failed" ? prev.attempts < MAX_ATTEMPTS : prev?.status === "capped";
+      if (prev && !retryable) {
         report.skipped++;
         continue;
       }

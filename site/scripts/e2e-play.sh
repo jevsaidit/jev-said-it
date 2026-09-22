@@ -139,6 +139,7 @@ check "$(curl -s -o $LOG/win.png -w '%{http_code} %{content_type}' $W/api/card/w
 check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/card/win/0/$U2) $(curl -s -o /dev/null -w '%{http_code}' $W/w/0/$U2)" "404 404" "no card and no page for a reward that was not published"
 [ "$(echo "$R" | jq -r '.error // empty')" ] && echo "   error: $(echo "$R" | jq -r .error) | $(echo "$R" | jq -r .panel)"
 
+check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/feed/calibration) $(curl -s $W/api/feed/calibration | jq -r 'has("resolved")')" "200 true" "Jev's record is public through the site"
 check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/feed/treasury) $(curl -s $W/api/feed/treasury | jq -r 'type')" "200 array" "the treasury log is public through the site"
 # It may answer "not measurable" (502) off mainnet, but it must ANSWER: an unbounded read of it kept the
 # whole page loading on 22/09/2026, and the e2e only saw it as "the panel is empty".

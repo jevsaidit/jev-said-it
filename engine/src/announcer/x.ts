@@ -79,7 +79,16 @@ export function xCredsFromEnv(env: NodeJS.ProcessEnv): XCreds | null {
 export const X_NO_HEX_UNTIL = Date.parse(process.env.X_NO_HEX_UNTIL || "2026-09-29T12:00:00Z");
 const HEX = /0x[0-9a-fA-F]{2,}/;
 
+/** Second hashtag, X only: it is where people look for what happens on this chain. Two is the limit
+ *  past which X treats a post as tag stuffing; Telegram keeps the plain signature. */
+export const X_EXTRA_TAG = "#robinhoodchain";
+
 export function forX(text: string, now: number = Date.now(), until: number = X_NO_HEX_UNTIL): string {
+  const tagged = text.endsWith("#jevsaidit") ? `${text} ${X_EXTRA_TAG}` : text;
+  return noHex(tagged, now, until);
+}
+
+function noHex(text: string, now: number, until: number): string {
   if (now >= until || !HEX.test(text)) return text;
   const lines = text.split("\n").filter((l) => !HEX.test(l));
   const sig = lines.lastIndexOf("jev said it.");

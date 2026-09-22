@@ -177,7 +177,8 @@ export async function serve(d: ServiceDeps): Promise<void> {
         else
           await task("announce", async () => {
             const r = await announce(d.db, makeSender(an.mode, an), { site: an.site, xDailyCap: an.xDailyCap, now: Math.floor(Date.now() / 1000) });
-            return { state: r.failed || r.refused ? "PARTIAL" : r.sent ? "OK" : "IDLE", detail: r };
+            // A cap that does not say what it withheld hides its own cost: CAPPED is its own state.
+            return { state: r.failed || r.refused ? "PARTIAL" : r.sent ? "OK" : r.capped ? "CAPPED" : "IDLE", detail: r };
           });
       } else mark("announce", "DISABLED", "ANNOUNCE_MODE off");
       // Railway's healthcheck only applies at deploy: afterwards, nobody restarts a blind engine.
