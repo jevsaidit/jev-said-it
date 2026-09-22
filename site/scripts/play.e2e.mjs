@@ -13,7 +13,7 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage();
 await page.addInitScript(
-  ({ rpc, account }) => {
+  ({ rpc, account, reject }) => {
     let id = 0;
     const call = async (method, params = []) => {
       const r = await fetch(rpc, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method, params }) });
@@ -25,13 +25,15 @@ await page.addInitScript(
       request: async ({ method, params }) => {
         if (method === "eth_requestAccounts" || method === "eth_accounts") return [account];
         if (method === "wallet_switchEthereumChain" || method === "wallet_addEthereumChain") return null;
+        // The "reject" step: the person presses Reject in the wallet (EIP-1193 code 4001).
+        if (reject && method === "eth_sendTransaction") throw Object.assign(new Error("User rejected the request."), { code: 4001 });
         return call(method, params);
       },
       on() {},
       removeListener() {},
     };
   },
-  { rpc, account },
+  { rpc, account, reject: step === "reject" },
 );
 
 const out = {};
@@ -64,6 +66,13 @@ try {
   if (step === "late") {
     out.submitDisabled = await page.locator(".play > .btn").isDisabled();
     out.agreeDisabled = await page.locator(".play__pick button").first().isDisabled();
+  }
+  if (step === "reject") {
+    await page.locator(".play__q").first().getByRole("button", { name: "Agree", exact: true }).click();
+    await page.locator(".play > .btn").click();
+    await page.locator(".play__tx").filter({ hasText: /rejected|revert|error/i }).waitFor({ timeout: 30_000 });
+    out.tx = (await page.locator(".play__tx").innerText()).trim();
+    out.hash = await page.locator(".play__tx").getAttribute("data-tx");
   }
   if (step === "claim") {
     const btn = page.locator(".play__claims").getByRole("button", { name: "Claim" });

@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isJev } from "@/lib/say";
 
-// Expected shape of GET /epochs/current (spec §9.4). The engine doesn't expose it yet: the site reads
+// Shape of GET /epochs/current (engine/src/server/feed.ts, publicQuestion). The site reads it
 // defensively and shows only the fields it finds.
 type Question = {
   id?: string;
   token?: string;
-  symbol?: string;
+  symbol?: string | null;
   p?: string | number;
   model?: string;
   deadline?: string | number;
@@ -16,6 +17,8 @@ type Question = {
 };
 type Epoch = { epoch?: number | string; questions?: Question[] };
 
+// Four states, kept apart on purpose: "offline" is the engine saying there is no epoch yet (503 from
+// the proxy, pre-launch), "blind" is the engine not answering at all. They must never look the same.
 type State =
   | { kind: "loading" }
   | { kind: "offline" }
@@ -37,7 +40,9 @@ export function LiveFeed({ ticker }: { ticker: string }) {
       try {
         const res = await fetch("/api/feed/epochs/current", { cache: "no-store" });
         if (stop) return;
-        if (res.status === 503) return setState({ kind: "offline" });
+        // 503 = the proxy or the engine said "no epoch yet"; a 404 from the engine is the same
+        // answer ("CallLedger not configured"), not an engine that is missing.
+        if (res.status === 503 || res.status === 404) return setState({ kind: "offline" });
         if (!res.ok) return setState({ kind: "blind" });
         setState({ kind: "ok", data: (await res.json()) as Epoch });
       } catch {
@@ -53,9 +58,10 @@ export function LiveFeed({ ticker }: { ticker: string }) {
   }, []);
 
   const qs = state.kind === "ok" ? (state.data.questions ?? []) : [];
+  const quiet = state.kind !== "ok" || qs.length === 0;
 
   return (
-    <div className="feed" aria-live="polite" aria-busy={state.kind === "loading"}>
+    <div className={`feed${quiet ? " feed--quiet" : ""}`} aria-live="polite" aria-busy={state.kind === "loading"}>
       <div className="feed__head">
         <span>GET /epochs/current</span>
         <span>
@@ -68,7 +74,10 @@ export function LiveFeed({ ticker }: { ticker: string }) {
 
       {state.kind === "loading" && (
         <div className="feed__empty">
-          <p>Reading the engine feed.</p>
+          <p>
+            Reading the engine feed.
+            <noscript> Needs JavaScript to read the engine.</noscript>
+          </p>
         </div>
       )}
 
@@ -95,7 +104,7 @@ export function LiveFeed({ ticker }: { ticker: string }) {
       {state.kind === "ok" && qs.length === 0 && (
         <div className="feed__empty">
           <h3>Nothing open right now.</h3>
-          <p>The engine is up and found no token with enough swaps in the last hour to ask about.</p>
+          <p>The engine is up and found no graduated token with enough swaps in the last hour and the last six hours to ask about.</p>
         </div>
       )}
 
@@ -103,16 +112,21 @@ export function LiveFeed({ ticker }: { ticker: string }) {
         qs.map((q, i) => (
           <div className="feed__row" key={q.id ?? i}>
             {q.id ? (
-              <a href={`/api/feed/q/${q.id}.json`} title={q.id}>
+              <a href={`/api/feed/q/${q.id}.json`} title={`Receipt ${q.id}`}>
                 {q.symbol ? `$${q.symbol}` : (q.token ?? q.id)}
+                <span className="feed__arrow" aria-hidden>
+                  {" "}
+                  ↗
+                </span>
               </a>
             ) : (
               <span>{q.symbol ?? q.token ?? "—"}</span>
             )}
             <span className="feed__p">p {q.p ?? "—"}</span>
-            <span>{when(q.deadline)}</span>
-            <span className="muted">
-              {q.outcome !== undefined && q.outcome !== null ? `outcome ${q.outcome}` : (q.status ?? q.model ?? "")}
+            <span className="feed__when">{when(q.deadline)}</span>
+            <span className="feed__state muted">
+              {q.outcome !== undefined && q.outcome !== null ? `outcome ${q.outcome}` : (q.status ?? "")}
+              {q.model && !isJev(q.model) ? ` · ${q.model} (fallback)` : ""}
             </span>
           </div>
         ))}

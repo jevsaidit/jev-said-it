@@ -17,6 +17,20 @@ vi.mock("../src/chain/client.js", () => ({
   }),
 }));
 
+// The two-halves sender of 22/09: the hash is handed to the caller before the "broadcast".
+vi.mock("../src/chain/send.js", async () => {
+  const real = await vi.importActual<typeof import("../src/chain/send.js")>("../src/chain/send.js");
+  return {
+    ...real,
+    sendTx: async (_d: unknown, req: { functionName: string; args?: unknown[] }, onHash: (h: string) => Promise<void>) => {
+      sent.push({ functionName: req.functionName, args: req.args });
+      const hash = `0x${sent.length.toString(16).padStart(64, "0")}`;
+      await onHash(hash);
+      return hash;
+    },
+  };
+});
+
 import { closeEpoch } from "../src/score/epoch.js";
 import { claimFor } from "../src/server/feed.js";
 import { EPOCH_LENGTH } from "../src/questions/epoch.js";
@@ -59,6 +73,7 @@ describe("closeEpoch: a root that landed on-chain while its receipt was lost is 
     [/INSERT INTO cursors/, () => ok()],
     [/FROM calls WHERE epoch/, () => ok(calls)],
     [/FROM transfers/, () => ok([{ bal: (50_000n * 10n ** 18n).toString() }])],
+    [/SELECT state, root, budget, payload, tx_hash FROM epochs WHERE epoch = \$1/, ([e]) => ok(epochs.has(e as number) ? [{ ...epochs.get(e as number)!, budget: "0", tx_hash: (epochs.get(e as number) as { tx_hash?: string }).tx_hash ?? null }] : [])],
     [/INSERT INTO epochs/, ([e, state, , root, , payload]) => {
       const cur = epochs.get(e as number);
       if (!cur || cur.state !== "PUBLISHED") epochs.set(e as number, { state: state as string, root: root as string | null, payload: payload as string });

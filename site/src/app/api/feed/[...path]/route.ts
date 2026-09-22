@@ -4,16 +4,24 @@
 
 const ALLOWED = /^(epochs\/(current|\d+)|q\/0x[0-9a-fA-F]{64}\.json|leaderboard\/\d+|calibration|config|holder\/0x[0-9a-fA-F]{40})$/;
 
+const offline = (reason: string) => Response.json({ state: "offline", reason }, { status: 503, headers: { "cache-control": "no-store" } });
+
 export async function GET(_req: Request, ctx: { params: Promise<{ path: string[] }> }) {
   const base = process.env.ENGINE_FEED_URL?.trim().replace(/\/+$/, "");
+  const launched = !!process.env.NEXT_PUBLIC_TOKEN_ADDRESS?.trim();
   const { path } = await ctx.params;
   const rel = path.join("/");
 
   if (!ALLOWED.test(rel)) {
     return Response.json({ error: "unknown feed path" }, { status: 404 });
   }
+  // Before launch the hero says the address is not public yet. /config carries the token address, so
+  // it stays closed until the page itself prints the address: the site never leaks it through a side door.
+  if (rel === "config" && !launched) {
+    return offline("not launched");
+  }
   if (!base) {
-    return Response.json({ state: "offline", reason: "feed not configured" }, { status: 503 });
+    return offline("feed not configured");
   }
 
   try {
@@ -24,6 +32,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ path: string[]
       signal: AbortSignal.timeout(8000),
     });
     const body = await res.text();
+    // The engine is up but has no CallLedger yet (pre-launch): that is "offline", not "unreachable".
+    // It answered; there is just no epoch to show.
+    if (res.status === 404 && (rel === "epochs/current" || rel.startsWith("holder/")) && /CallLedger not configured/.test(body)) {
+      return offline("CallLedger not configured");
+    }
     return new Response(body, {
       status: res.status,
       headers: {
@@ -34,6 +47,6 @@ export async function GET(_req: Request, ctx: { params: Promise<{ path: string[]
     });
   } catch {
     // Not being able to look is not "no questions": we say so (spec §6, §9.3).
-    return Response.json({ state: "blind", reason: "engine unreachable" }, { status: 502 });
+    return Response.json({ state: "blind", reason: "engine unreachable" }, { status: 502, headers: { "cache-control": "no-store" } });
   }
 }

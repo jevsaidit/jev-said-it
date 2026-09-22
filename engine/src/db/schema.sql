@@ -116,7 +116,8 @@ CREATE TABLE IF NOT EXISTS treasury_ops (
 CREATE INDEX IF NOT EXISTS treasury_ops_epoch ON treasury_ops (epoch, kind);
 
 -- The announcer: one row per (event, channel), written BEFORE sending, so an event is posted at
--- most once per channel even across restarts. status: pending | sent | failed | capped | refused
+-- most once per channel even across restarts.
+-- status: pending | sent | failed | capped | refused | unconfigured (channel has no keys) | unknown (no answer: never retried)
 CREATE TABLE IF NOT EXISTS announcements (
   event_key  TEXT NOT NULL,
   channel    TEXT NOT NULL,
@@ -131,3 +132,8 @@ CREATE TABLE IF NOT EXISTS announcements (
 
 -- When the epoch's root went on-chain: claims open CLAIM_DELAY (12h) after it.
 ALTER TABLE epochs ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;
+
+-- When the epoch was last computed or declared (PAYABLE / NOT_PAYABLE): the announcer tells a
+-- NOT_PAYABLE epoch from here. state VOIDED = the guardian voided the root on-chain; its claims are
+-- not served and not announced.
+ALTER TABLE epochs ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;

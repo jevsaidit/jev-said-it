@@ -16,6 +16,9 @@ import {UniV4SwapAdapter} from "../src/adapters/UniV4SwapAdapter.sol";
 ///      Full procedure in `docs/runbook-launch.md`. Not affiliated with TypeSafe AI.
 contract DeployCore is Script {
     error AdapterHasNoCode(address adapter);
+    error TokenHasNoCode(address token);
+    error RouterHasNoCode(address universalRouter);
+    error NonceMoved(uint256 actual, uint256 expected);
 
     struct Cfg {
         uint256 pk;
@@ -69,6 +72,14 @@ contract DeployCore is Script {
         // a wrong address with the same confidence as a right one: if there is no code there,
         // it is not an adapter and we do not go on.
         if (c.adapter.code.length == 0) revert AdapterHasNoCode(c.adapter);
+        // `token` is immutable in the ledger and the distributor, `universalRouter` in the swap adapter:
+        // a wrong one is a redeploy, and the ledger's genesis would move with it.
+        if (c.token.code.length == 0) revert TokenHasNoCode(c.token);
+        if (c.universalRouter.code.length == 0) revert RouterHasNoCode(c.universalRouter);
+        // Same reason as DeployAdapter: the published map is CREATE(deployer, nonce). The adapter took
+        // nonce 0, so the five contracts below take 1..5, and nothing else may have been sent in between.
+        uint256 expectedNonce = vm.envOr("EXPECTED_NONCE", uint256(1));
+        if (vm.getNonce(c.deployer) != expectedNonce) revert NonceMoved(vm.getNonce(c.deployer), expectedNonce);
 
         vm.startBroadcast(c.pk);
 

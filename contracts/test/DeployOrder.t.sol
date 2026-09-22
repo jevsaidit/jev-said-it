@@ -59,6 +59,9 @@ contract DeployOrderTest is Test {
         vm.setEnv("POOL_FEE", "0");
         vm.setEnv("POOL_TICK_SPACING", "200");
         vm.setEnv("POOL_HOOKS", vm.toString(hooks));
+        // The scripts refuse a token or a router without code (both immutable downstream).
+        vm.etch(token, hex"6000");
+        vm.etch(universalRouter, hex"6000");
     }
 
     function test_published_nonce_map_matches_what_the_scripts_deploy() public {
@@ -133,6 +136,22 @@ contract DeployOrderTest is Test {
             uint256(_staticcall(target, sig, what)) == expected,
             string.concat(what, ": ", sig, " does not match (deploy order changed?)")
         );
+    }
+
+    /// The published map is CREATE(deployer, nonce): the scripts refuse to run from any other nonce
+    /// than the one the map was computed for, instead of leaving it to a human to notice.
+    function test_scripts_refuse_a_moved_nonce() public {
+        DeployAdapter adapterScript = new DeployAdapter();
+        vm.setNonce(deployer, 1); // as if one stray transaction had left the deploy key
+        vm.expectRevert(abi.encodeWithSelector(DeployAdapter.NonceMoved.selector, 1, 0));
+        adapterScript.run();
+        vm.setNonceUnsafe(deployer, 0);
+        adapterScript.run(); // from the nonce the map was computed for, it goes through
+        vm.setEnv("PONS_ESCROW_ADAPTER", vm.toString(vm.computeCreateAddress(deployer, NONCE_PONS_ESCROW_ADAPTER)));
+        DeployCore coreScript = new DeployCore();
+        vm.setNonce(deployer, 2); // one stray transaction between the adapter and the core
+        vm.expectRevert(abi.encodeWithSelector(DeployCore.NonceMoved.selector, 2, 1));
+        coreScript.run();
     }
 
     /// The handover batch of runbook §4.7: one scheduleBatch + executeBatch from the proposer takes

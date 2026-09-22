@@ -1,6 +1,7 @@
 import { decodeEventLog, encodeFunctionData, encodePacked, keccak256, parseAbi, type Address, type Hex, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { makeWallet } from "../chain/client.js";
+import { NotSentError, sendTx } from "../chain/send.js";
 import { lookupTx } from "../chain/tx.js";
 import { ponsEthPoolId } from "../chain/pool.js";
 import { PONS_HOOK, POOL_MANAGER } from "../config.js";
@@ -46,7 +47,7 @@ export interface TreasuryConfig {
 export type TreasuryOutcome =
   | { state: "IDLE"; detail: string }
   | { state: "WAITING"; detail: string }
-  | { state: "OK"; claimed?: string; swapped?: { epoch: number; ethIn: string; tokenOut: string; minOut: string; tx: Hex } }
+  | { state: "OK"; claimed?: string; claimError?: string; swapped?: { epoch: number; ethIn: string; tokenOut: string; minOut: string; tx: Hex } }
   | { state: "FAILED"; reason: string };
 
 /**
@@ -155,21 +156,37 @@ async function settleSwap(db: Db, chain: PublicClient, cfg: TreasuryConfig, p: P
 export async function runTreasury(db: Db, chain: PublicClient, cfg: TreasuryConfig, genesis: number): Promise<TreasuryOutcome> {
   const keeper = privateKeyToAccount(cfg.keeperPk);
   const wallet = makeWallet(cfg.rpcUrl, await chain.getChainId(), cfg.keeperPk);
-  const out: { claimed?: string; swapped?: { epoch: number; ethIn: string; tokenOut: string; minOut: string; tx: Hex } } = {};
+  const out: { claimed?: string; claimError?: string; swapped?: { epoch: number; ethIn: string; tokenOut: string; minOut: string; tx: Hex } } = {};
 
   // 1. Collect: escrow -> adapter -> router. Anyone may call claim(); the keeper pays the gas.
+  //    A collection that fails does not stop the buyback of what was collected earlier, and it is
+  //    not retried with gas every 15 seconds: the simulation refuses it first, for free.
   const owed = (await chain.readContract({ address: cfg.adapter, abi: ADAPTER_ABI, functionName: "claimable" })) +
     (await chain.getBalance({ address: cfg.adapter }));
   if (owed >= cfg.minClaimWei) {
-    const tx = await wallet.writeContract({ account: keeper, chain: wallet.chain, address: cfg.adapter, abi: ADAPTER_ABI, functionName: "claim" });
-    const rc = await chain.waitForTransactionReceipt({ hash: tx });
-    const ev = eventsOf(ADAPTER_ABI, cfg.adapter, rc.logs).find((e) => e.eventName === "Forwarded");
-    if (rc.status !== "success" || !ev) {
-      await record(db, null, "CLAIM_UNCONFIRMED", tx, { status: rc.status });
-      return { state: "FAILED", reason: `claim ${tx}: no Forwarded event` };
+    try {
+      const tx = await sendTx(
+        { pub: chain, wallet, account: keeper },
+        { address: cfg.adapter, abi: ADAPTER_ABI, functionName: "claim" },
+        async (hash) => record(db, null, "CLAIM_SENT", hash, { owed }),
+      );
+      const rc = await chain.waitForTransactionReceipt({ hash: tx }).catch(() => null);
+      if (!rc) out.claimError = `claim ${tx}: receipt not read yet`;
+      else {
+        const ev = eventsOf(ADAPTER_ABI, cfg.adapter, rc.logs).find((e) => e.eventName === "Forwarded");
+        if (rc.status !== "success" || !ev) {
+          await record(db, null, "CLAIM_UNCONFIRMED", tx, { status: rc.status });
+          out.claimError = `claim ${tx}: no Forwarded event`;
+        } else {
+          out.claimed = String(ev.args.amount);
+          await record(db, null, "CLAIM", tx, { forwarded: ev.args.amount });
+        }
+      }
+    } catch (e) {
+      const why = (e as Error).message.split("\n")[0]!;
+      if (e instanceof NotSentError) await record(db, null, "CLAIM_REFUSED", null, { owed, reason: why });
+      out.claimError = `claim ${e instanceof NotSentError ? "not sent" : "broadcast, outcome unknown"}: ${why}`;
     }
-    out.claimed = String(ev.args.amount);
-    await record(db, null, "CLAIM", tx, { forwarded: ev.args.amount });
   }
 
   // 2. A buyback already sent is settled before anything else: its hash was stored the moment it
@@ -204,21 +221,26 @@ export async function runTreasury(db: Db, chain: PublicClient, cfg: TreasuryConf
       const cut = await haircutBps(chain, cfg.token);
       const minOut = minOutFor(gross, cut, cfg.slippageBps);
       if (minOut === 0n) return { state: "FAILED", reason: "minOut is 0: pool not readable, refusing an unprotected swap" };
-      const tx = await wallet.writeContract({
-        account: keeper,
-        chain: wallet.chain,
-        address: cfg.router,
-        abi: ROUTER_ABI,
-        functionName: "processSwap",
-        args: [minOut],
-      });
-      const p: Pending = {
-        epoch,
-        tx,
-        detail: { minOut: minOut.toString(), gross: gross.toString(), haircutBps: cut.toString(), slippageBps: cfg.slippageBps.toString() },
-        ageSec: 0,
-      };
-      await record(db, epoch, SWAP_PENDING, tx, p.detail);
+      const detail = { minOut: minOut.toString(), gross: gross.toString(), haircutBps: cut.toString(), slippageBps: cfg.slippageBps.toString() };
+      let tx: Hex;
+      try {
+        // The pending row is written BEFORE the broadcast: whatever the network answers, the next
+        // pass settles this buyback from the chain and never sends a second one for the epoch.
+        tx = await sendTx(
+          { pub: chain, wallet, account: keeper },
+          { address: cfg.router, abi: ROUTER_ABI, functionName: "processSwap", args: [minOut] },
+          async (hash) => record(db, epoch, SWAP_PENDING, hash, detail),
+        );
+      } catch (e) {
+        if (e instanceof NotSentError) {
+          // Refused by the simulation: nothing left, and the epoch's buyback is closed like a revert
+          // would close it (resending the same minOut into the same pool every 15s only burns gas).
+          await record(db, epoch, "SWAP_REVERTED", null, { ...detail, note: `not sent: ${e.message}` });
+          return { state: "FAILED", reason: `processSwap not sent: ${e.message}` };
+        }
+        return { state: "WAITING", detail: `processSwap broadcast, outcome unknown (${(e as Error).message}): settled next pass` };
+      }
+      const p: Pending = { epoch, tx, detail, ageSec: 0 };
       // A receipt that does not come in time is not a failure: the pending row settles it next pass.
       await chain.waitForTransactionReceipt({ hash: tx }).catch(() => null);
       const settled = await settleSwap(db, chain, cfg, p);
@@ -227,5 +249,7 @@ export async function runTreasury(db: Db, chain: PublicClient, cfg: TreasuryConf
       out.swapped = (settled as { swapped?: typeof out.swapped }).swapped;
     }
   }
-  return out.claimed || out.swapped ? { state: "OK", ...out } : { state: "IDLE", detail: `next buyback not before ${due}` };
+  if (out.claimed || out.swapped) return { state: "OK", ...out };
+  if (out.claimError) return { state: "FAILED", reason: out.claimError };
+  return { state: "IDLE", detail: `next buyback not before ${due}` };
 }

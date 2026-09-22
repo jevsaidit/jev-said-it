@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
-import { C, cardAssets, short, tokens, winCard } from "@/lib/cards";
+import { BLIND, blindResponse, C, cardAssets, short, tokens, winCard } from "@/lib/cards";
+import { SITE_HOST } from "@/lib/site";
 import { Big, Card, Label, Line, Mid } from "../../../Card";
 
 export const runtime = "nodejs";
@@ -9,13 +10,16 @@ export const runtime = "nodejs";
 export async function GET(_req: Request, ctx: { params: Promise<{ epoch: string; addr: string }> }) {
   const { epoch, addr } = await ctx.params;
   const w = await winCard(epoch, addr);
+  if (w === BLIND) return blindResponse();
   if (!w) return new Response("no reward for this address in this epoch", { status: 404 });
   const { fonts, mascot } = await cardAssets();
   return new ImageResponse(
     (
-      <Card mascot={mascot} footer="$JEVSAIDIT  ·  jevsaidit.com  ·  #jevsaidit">
+      <Card mascot={mascot} footer={`$JEVSAIDIT  ·  ${SITE_HOST}  ·  #jevsaidit`}>
         <Label>{`EPOCH ${w.epoch}  ·  ${short(w.account)}`}</Label>
-        <Big color={C.hood}>I BEAT JEV.</Big>
+        {/* "Jev" only when Jev answered the whole epoch; a fallback model is named, never dressed as Jev. */}
+        <Big color={C.hood}>{w.jev ? "I BEAT JEV." : "I BEAT THE MODEL."}</Big>
+        {!w.jev && w.models.length > 0 && <Label>{`answered by ${w.models.join(", ")} (fallback)`}</Label>}
         <div style={{ display: "flex", height: 18 }} />
         <Mid color={C.gold}>{`+${tokens(w.amount)}`}</Mid>
         <Mid color={C.gold}>$JEVSAIDIT</Mid>

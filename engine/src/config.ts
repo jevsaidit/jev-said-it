@@ -1,4 +1,5 @@
 import type { Address, Hex } from "viem";
+import { xCredsFromEnv, type XCreds } from "./announcer/x.js";
 
 function need(name: string): string {
   const v = process.env[name];
@@ -151,6 +152,9 @@ export interface AnnounceEnv {
   tgToken: string;
   tgChannel?: string;
   tgTestChat?: string;
+  /** OAuth 1.0a user context of @jevsaidit (X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET).
+   *  Null = X is not a channel: its posts are recorded as `unconfigured`, never sent later. */
+  x: XCreds | null;
   site: string;
   xDailyCap: number;
 }
@@ -165,7 +169,8 @@ export function loadAnnounceEnv(): AnnounceEnv | null {
     tgToken: need("TELEGRAM_BOT_TOKEN"),
     tgChannel: process.env.TELEGRAM_CHANNEL_ID || undefined,
     tgTestChat: process.env.TELEGRAM_TEST_CHAT_ID || undefined,
-    site: process.env.PUBLIC_SITE_URL || "https://jevsaidit.com",
+    x: xCredsFromEnv(process.env),
+    site: process.env.PUBLIC_SITE_URL || "https://www.jevsaidit.com",
     xDailyCap: num("X_DAILY_CAP", 6),
   };
 }

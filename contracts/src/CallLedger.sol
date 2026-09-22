@@ -35,6 +35,9 @@ contract CallLedger is Ownable2Step {
     error NoCapacity();
     error AlreadyAnswered();
     error BadDeadline();
+    error AlreadyOpen();
+    error WrongEpoch();
+    error DeadlinePastEpoch();
 
     constructor(address token_, address owner_, address publisher_, uint256 genesis_) Ownable(owner_) {
         token = IERC20(token_);
@@ -51,10 +54,17 @@ contract CallLedger is Ownable2Step {
         return c > MAX_CALLS_PER_EPOCH ? MAX_CALLS_PER_EPOCH : c;
     }
 
+    /// @notice Publisher only. A batch belongs to the epoch the chain is in, closes inside it, and an id
+    ///         already open keeps its deadline: a publisher key cannot reopen a question after its close
+    ///         with a later deadline, when part of the outcome is already visible. The engine keeps the same
+    ///         rules and a stricter margin; these are the ones the chain enforces on its own.
     function openQuestions(uint256 epoch, bytes32[] calldata ids, uint64 deadline) external {
         if (msg.sender != publisher) revert NotAuthorized();
+        if (epoch != currentEpoch()) revert WrongEpoch();
         if (deadline <= block.timestamp) revert BadDeadline();
+        if (deadline > genesis + (epoch + 1) * EPOCH_LENGTH) revert DeadlinePastEpoch();
         for (uint256 i = 0; i < ids.length; i++) {
+            if (questionDeadline[epoch][ids[i]] != 0) revert AlreadyOpen();
             questionDeadline[epoch][ids[i]] = deadline;
         }
         emit QuestionsOpened(epoch, ids, deadline);

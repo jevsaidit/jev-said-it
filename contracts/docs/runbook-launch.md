@@ -146,7 +146,9 @@ Operating rules for whoever computes `minOut` for `FeeRouter.processSwap(minOut)
    reverts with `Slippage()` if what is delivered is below `minOut`.
 2. Sizing:
    `minOut = quote_gross * (1 - haircut) * (1 - slippage_tolerance)`
-   with `haircut = 0.01` as long as the creator tax stays zero.
+   with `haircut = 0.01` as long as the creator tax stays zero. `slippage_tolerance` is a
+   number, not a symbol: the engine's default is **300 bps** (`SWAP_SLIPPAGE_BPS`,
+   `engine/src/config.ts`), applied on top of the hook cut it re-reads on-chain every pass.
 3. **Where `quote_gross` comes from.** *(The engine does this itself since 21/09: `engine/src/treasury/quote.ts`
    computes the exact in-range output from the pool's `slot0` and `liquidity` — checked against 10,398
    real buys — and re-reads the hook fee and creator tax on-chain every pass. QuoterV4 below is not
@@ -208,7 +210,8 @@ that cannot be recovered: that is why the two checks that can say "no" are due a
 (expected addresses, §2.2) and **T-2** (guardian, §2.3), i.e. before the announcement and not at T-1h.
 
 - [ ] `cd contracts && forge test` green. What matters is **`0 failed`**: on 2026-09-20 the suite
-      gave **59 passed, 1 skipped**, on 2026-09-21 after the review fixes **80 passed, 2 skipped**; the total grows as tests are added, so a
+      gave **59 passed, 1 skipped**, on 2026-09-21 after the review fixes **80 passed, 2 skipped**, on
+      2026-09-22 **81 passed, 2 skipped, 0 failed**; the total grows as tests are added, so a
       higher number is not a problem — a `failed`, even a single one, stops the launch.
       The skipped one is the fork test, which skips itself without `--fork-url`.
 - [ ] `forge test --match-path 'test/fork/*' --fork-url robinhood` green: **2 passed** (FeePipeline + UniV4SwapAdapter). This is
@@ -218,9 +221,9 @@ that cannot be recovered: that is why the two checks that can say "no" are due a
 - [ ] Legal opinion received.
 - [ ] Domains `jevsaidit.com` / `.fun` / `.xyz` registered and served; X handles `@jevsaidit` and
       `@jevsaidit_bot` active.
-- [ ] Engine (Plan 2) ready to start **within 10 minutes** of launch, with the mainnet KEEPER and SCORER keys
-      already loaded, **and with the `Transfer` indexer ready to start from the launch
-      block** (§5.7).
+- [ ] Engine (Plan 2) **running on Railway from T-1h** (§5.0 step 1), with the mainnet `KEEPER_PK`
+      loaded and **`SCORER_PK` NOT loaded until §5.0 step 3** (the first root is checked by hand
+      first), **and with the `Transfer` indexer ready to start from the launch block** (§5.7).
 - [ ] Testnet dress rehearsal completed (§3).
 - [ ] Mainnet `.env` filled in from `.env.example` and **never** committed (`.env` and `.env.*` are in
       `.gitignore`).
@@ -246,7 +249,7 @@ that cannot be recovered: that is why the two checks that can say "no" are due a
 | Variable | Who it is | What it can do |
 |---|---|---|
 | `DEPLOYER_PK` | key that signs the two scripts, **unused and at nonce 0** (§2.2) | **temporary** owner of FeeRouter / RewardsDistributor / CallLedger until the timelock's `acceptOwnership` (§4.7). **Not** of `UniV4SwapAdapter`, which is plain `Ownable`: its handover to the timelock is already effective at the end of `DeployCore` |
-| `TIMELOCK_PROPOSER` | team multisig or EOA | owner of the `PonsEscrowAdapter` (the only one that can `setRouter`), sole proposer of the timelock |
+| `TIMELOCK_PROPOSER` | team multisig or EOA | owner of the `PonsEscrowAdapter` (the only one that can `setRouter`), sole proposer of the timelock. **Between §4.1 (T-24h) and §4.6.3 this key alone can burn the adapter**: `setRouter` accepts any address with code (`src/PonsEscrowAdapter.sol:37`), once, irreversibly — a wrong or hostile call sends every future creator fee there and the only way out is §9.2. For that day it is a single point of failure with no timelock in front of it: keep it offline and sign nothing with it before §4.6.3 |
 | `COMPUTE_WALLET` | compute treasury | withdraws the compute bucket (5%) with `withdrawCompute()` (§6.4) |
 | `OPS_WALLET` | ops treasury | withdraws the ops bucket (10%) with `withdrawOps()` (§6.4) |
 | `TEAM_WALLET` | team compensation | withdraws the team bucket (20%) with `withdrawTeam()` (§6.4). **Holds no supply** (§1.3) |
@@ -287,8 +290,16 @@ promise into a commitment anyone can verify.
 | 4 | `CallLedger` | `DeployCore` | T+5 min, §4.6 |
 | 5 | `UniV4SwapAdapter` | `DeployCore` | T+5 min, §4.6 |
 
-Verified on `script/DeployCore.s.sol:79-85`: the five `new` precede **all** the setters, so
+Verified on `script/DeployCore.s.sol:94-101`: the five `new` precede **all** the setters, so
 nonces 1..5 are consecutive and in this order.
+
+> **Since 22/09 the scripts check the nonce themselves.** `DeployAdapter` refuses to broadcast unless
+> `vm.getNonce(deployer) == EXPECTED_NONCE` (env var, default **0**; `script/DeployAdapter.s.sol:36-37`),
+> `DeployCore` the same with default **1** (`script/DeployCore.s.sol:81-82`); the revert is
+> `NonceMoved(actual, expected)` and it fires in the simulation, before anything is sent. The `cast nonce`
+> in §4.1 and §4.6 stays as the human check; the script is the machine check. If you have recomputed the
+> map from a different starting nonce, set `EXPECTED_NONCE` accordingly — a script that reverts on a nonce
+> you know about is telling you the map you published is not the one it is about to deploy.
 
 ```bash
 export PATH="$HOME/.foundry/bin:$PATH"
@@ -341,8 +352,9 @@ After each deploy the runbook compares what was deployed with what was announced
 works only within `CLAIM_DELAY` = **12 hours** of `setEpochRoot`. But after the §4.7
 handover the owner is the `TimelockController` with `minDelay` = **24 hours**. **An operation
 scheduled on a 24-hour timelock cannot land inside a 12-hour window** — ever, for
-any value, for any urgency. From T+24h onwards the guardian is **the only address in the world**
-that can void an epoch. It is not a second pair of hands: it is the only pair.
+any value, for any urgency. From the §4.7 handover batch onwards — minutes after `DeployCore`, since
+22/09 — the guardian is **the only address in the world** that can void an epoch. It is not a second
+pair of hands: it is the only pair.
 
 **Why the deadline is T-2.** At T-2 days the social channel publicly announces date and time.
 A check that can say "no" must have its outcome **before** that announcement.
@@ -397,7 +409,7 @@ the mocks; the swap path is verified only on the mainnet fork (fork test, §2).
 > Correction of 2026-09-20: the previous version said the UniversalRouter was also missing on
 > testnet, but only the **wrong** address had been checked — the mis-deployed one of §0.
 > The operational conclusion does not change (without a factory there is no pool); what changes is the value to put in
-> `.env` at point 3 below. Evidence in [`addresses.md`](./addresses.md).
+> `.env.testnet` at point 3 below. Evidence in [`addresses.md`](./addresses.md).
 
 > **This section is entirely on testnet.** All the commands below use `$RPC`, which in
 > this section is `robinhood_testnet` — and **§4 redefines it to `robinhood`**. Therefore:
@@ -420,10 +432,21 @@ export RPC=robinhood_testnet          # <<-- in this section, always testnet
 > (this very section says so) and no §3 command uses them. Keeping mainnet constants in the
 > dress rehearsal shell only serves to have them end up, by mistake, inside a test command.
 
-1. `cp .env.example .env` and fill in `DEPLOYER_PK`, `TIMELOCK_PROPOSER`, `COMPUTE_WALLET`,
-   `OPS_WALLET`, `TEAM_WALLET`, `KEEPER`, `SCORER`, `GUARDIAN` with **testnet** keys. Then
-   `set -a; . ./.env; set +a` — `cast` does not read `.env` by itself.
-2. Deploy the mocks and put their addresses in `.env`:
+1. `cp .env.example .env.testnet` — **not `.env`** — and fill in `DEPLOYER_PK`, `TIMELOCK_PROPOSER`,
+   `COMPUTE_WALLET`, `OPS_WALLET`, `TEAM_WALLET`, `KEEPER`, `SCORER`, `GUARDIAN` with **testnet** keys.
+   Then `set -a; . ./.env.testnet; set +a` — `cast` does not read any env file by itself.
+
+   > **Why a separate file.** §3 and §4 used to share one `contracts/.env`, and step 2 below writes the
+   > **MockFeeEscrow** into `PONS_FEE_ESCROW`. That value is `immutable` in the adapter
+   > (`src/PonsEscrowAdapter.sol:14`), `DeployAdapter` reads it from the environment, and the §4.1 check
+   > "`escrow()` must be `0xd3AF…`" comes **after** the nonce-consuming deploy: a stale rehearsal
+   > `.env` at T-24h would burn nonce 0 on an adapter wired to a mock, and shift the whole published map.
+   > The §4 preamble now also refuses a `PONS_FEE_ESCROW` that is not the mainnet escrow, but the first
+   > defense is not having the two sets of values in the same file.
+   > `forge script` reads `contracts/.env` on its own **without overriding variables already exported**:
+   > with `.env.testnet` sourced, the testnet values win. Check before step 4: `echo $PONS_FEE_ESCROW`
+   > must print the mock from step 2, not `0xd3AF…`.
+2. Deploy the mocks and put their addresses in `.env.testnet`:
    ```bash
    forge create test/mocks/MockERC20.sol:MockERC20 \
      --rpc-url $RPC --private-key $DEPLOYER_PK --broadcast     # -> JEVSAID_TOKEN
@@ -440,7 +463,9 @@ export RPC=robinhood_testnet          # <<-- in this section, always testnet
    **the real address**, `0x8876789976dEcBfCbBbe364623C63652db8C0904`, which exists on testnet: it
    costs nothing and makes the adapter try the same value it will have on mainnet. The swap will not
    be exercised anyway, because on testnet the pool does not exist.
-4. Phase 1, and note the adapter in `PONS_ESCROW_ADAPTER` (reload `.env` after writing it):
+4. Phase 1, and note the adapter in `PONS_ESCROW_ADAPTER` (reload `.env.testnet` after writing it).
+   The testnet deploy key must be at nonce 0 too, or the script reverts `NonceMoved` (§2.2): set
+   `EXPECTED_NONCE` to the real one, this is the one place where that is fine:
    ```bash
    forge script script/DeployAdapter.s.sol --rpc-url $RPC --broadcast
    ```
@@ -470,7 +495,9 @@ export RPC=robinhood_testnet          # <<-- in this section, always testnet
    exercised on testnet (the pool is missing): the unit tests and the fork test cover it.
 9. Run the engine for **3 complete epochs** on testnet against these contracts, then reread
    `callsUsed`, `roots` and the balances: it is the last chance to discover an epoch misalignment
-   without paying for it.
+   without paying for it. **Three epochs are 18 hours**, and §2 wants the dress rehearsal done before
+   the §4.1 adapter deploy at T-24h: the engine must be running on testnet by **T-2 days at the
+   latest**, i.e. before the public announcement, not the evening before the launch.
 10. **Also rehearse the guardian procedure** (§7): publish a root, and before the 12h expire
     have the person who will hold the key on mainnet run `voidEpoch`, timing how long it
     takes from when they receive the alert. If it takes more than 12 hours, §7 does not work.
@@ -504,6 +531,17 @@ for v in RPC FACTORY MEME_HOOK DEPLOYER_PK TIMELOCK_PROPOSER COMPUTE_WALLET OPS_
   [ -n "$(eval echo \$$v)" ] || echo "!! EMPTY: $v"
 done
 echo "RPC=$RPC   (must print 'robinhood')"
+
+# Non-empty is not enough: a rehearsal .env (§3) is non-empty and wrong. These three are
+# immutable or one-shot downstream (adapter escrow, swap adapter router, pool hook).
+[ "$(echo $PONS_FEE_ESCROW | tr A-F a-f)" = 0xd3afeb2a57f70ef218aa82451c51b2fb0416ac9e ] || echo "!! STOP: PONS_FEE_ESCROW is not the mainnet escrow (stale/testnet .env)"
+[ "$(echo $UNIVERSAL_ROUTER | tr A-F a-f)" = 0x8876789976decbfcbbbe364623c63652db8c0904 ] || echo "!! STOP: UNIVERSAL_ROUTER wrong"
+[ "$(echo $POOL_HOOKS | tr A-F a-f)" = 0xe5e702641ea86f4ae6cc3cdaed2b886f976be044 ] || echo "!! STOP: POOL_HOOKS wrong"
+
+# The deploy key's ADDRESS (not its key): the one published at T-4 (§2.2). Not in .env, so it is
+# exported here, once per shell, because §4.1 and §4.6 both compare the chain against it.
+export DEPLOYER=<address of the deploy key, as published at T-4>
+need DEPLOYER
 ```
 
 > **`TEAM_WALLET` is in that loop because `DeployCore` reads it.** Since Task 11 the `FeeRouter`
@@ -521,11 +559,11 @@ echo "RPC=$RPC   (must print 'robinhood')"
 > inside the `--constructor-args` of the verification in §4.1. The loop above is there to see it.
 
 > ### Rule for all of §4: new shell, redo the preamble
-> This section spans from T-24h to T+24h. Hours pass between one step and the next: the shell
+> This section spans from T-24h to T+15 min — a day apart. Hours pass between one step and the next: the shell
 > closes, the laptop reboots, another person takes over. **Nothing of what is above
 > survives.** Every time you open a new shell, before touching any §4 command:
 >
-> 1. rerun the preamble block above (including `cd contracts`);
+> 1. rerun the preamble block above (including `cd contracts` and the `DEPLOYER` export);
 > 2. from §4.4 onwards, also re-export `JEVSAID_TOKEN`;
 > 3. from §4.6.1 onwards, also re-export the six values printed by `DeployCore`.
 >
@@ -572,15 +610,18 @@ echo "RPC=$RPC   (must print 'robinhood')"
 
 ### 4.1 T-24h — phase 1: adapter deploy
 
-> **New shell?** §4 covers from T-24h to T+24h: more than one session, by construction.
+> **New shell?** §4 covers from T-24h to T+15 min: more than one session, by construction.
 > Before any command of this step, rerun the **§4 preamble**.
 
 > ### First of all: clear `broadcast/` of the dress rehearsal records
 > **Done only once, here.**
 > `forge script` writes to `broadcast/<script>/<chainid>/run-latest.json`, and **the folder
-> name is the chain id, not the environment**. A dress rehearsal done on a local fork *pinned to
-> 4663* — which is the normal way to rehearse this runbook — writes **to the very same files**
-> that the real deploy will then use.
+> name is the chain id, not the environment**. A dress rehearsal done **by hand** on a local fork
+> *pinned to 4663* writes **to the very same files** that the real deploy will then use. The
+> official rehearsal, `contracts/scripts/rehearse-launch-fork.sh`, does not: it points
+> `FOUNDRY_BROADCAST` at a temp dir (script line 18) and asserts at the end that
+> `contracts/broadcast/` is empty (line 155). The check below is for the hand-run case, and it
+> costs one command, so it stays.
 >
 > The risk is not theoretical: the deployer recovery command in §4.6.4 reads exactly that
 > file. With a dress rehearsal record still there, it returns the address of the **fake deployer**
@@ -612,11 +653,26 @@ echo "RPC=$RPC   (must print 'robinhood')"
 forge script script/DeployAdapter.s.sol --rpc-url $RPC
 ```
 
-The output must contain **`chain id (mainnet = 4663): 4663`**. If it prints `46630` you still have
-the dress rehearsal RPC: fix `$RPC` and redo. This line is printed **before** the
-broadcast on purpose — in the simulation there is nothing to undo, in the real deploy there is.
+The output must contain **`chain id (mainnet = 4663): 4663`** **and**
+**`escrow (immutable, cannot be changed after the deploy): 0xd3AFEB2a57f70eF218Aa82451c51B2fb0416Ac9e`**.
+If it prints `46630` you still have the dress rehearsal RPC: fix `$RPC` and redo. If the escrow line
+shows anything else, you have the §3 rehearsal values in the environment: the adapter would be born
+wired to a mock, and `escrow` is `immutable`. These lines are printed **before** the broadcast on
+purpose — in the simulation there is nothing to undo, in the real deploy there is. The simulation
+also runs the script's own nonce check: a `NonceMoved(actual, expected)` revert here means the deploy
+key is not at nonce 0 (§2.2) and nothing has been sent.
 
-**Then the deploy [IRREVERSIBLE]** — without `--verify`, see the §0 warning:
+**Then the deploy [IRREVERSIBLE]** — without `--verify`, see the §0 warning. Immediately before,
+the nonce, measured now and not four days ago (§2.2 checked it at T-4; this is the last moment a
+shifted nonce is cheap):
+
+```bash
+N=$(cast nonce "$DEPLOYER" --rpc-url $RPC)
+need N && [ "$N" = 0 ] || echo "!! STOP: nonce $N, the map published at T-4 is already false — republish (§4.2) before deploying"
+```
+
+The script repeats the same check on its own (`EXPECTED_NONCE`, default 0, §2.2) and refuses to
+broadcast on any other value; the line above is so that you read it before the script does.
 
 ```bash
 forge script script/DeployAdapter.s.sol --rpc-url $RPC --broadcast
@@ -632,7 +688,7 @@ export PONS_ESCROW_ADAPTER=<printed address>
 **Comparison with the address announced at T-4 (§2.2) — if they diverge: PAUSE AND REPUBLISH:**
 
 ```bash
-export DEPLOYER=<address of the deploy key>
+need DEPLOYER   # exported in the §4 preamble
 ATTESO=$(cast compute-address "$DEPLOYER" --nonce 0)
 if need ATTESO && need PONS_ESCROW_ADAPTER; then
   echo "expected  = $ATTESO"
@@ -707,7 +763,7 @@ by hand from the Blockscout UI.
 
 ### 4.4 T0 — launch on Pons v2 **[IRREVERSIBLE]**
 
-> **New shell?** §4 covers from T-24h to T+24h: more than one session, by construction.
+> **New shell?** §4 covers from T-24h to T+15 min: more than one session, by construction.
 > Before any command of this step, rerun the **§4 preamble**.
 
 > **Tested on a mainnet fork on 2026-09-21** (`contracts/scripts/rehearse-launch-fork.sh`, §4.5 gate
@@ -923,7 +979,7 @@ must appear**: if none appears, go straight to the third outcome.
 
 ### 4.6 T+5 min — phase 2: core deploy
 
-> **New shell?** §4 covers from T-24h to T+24h: more than one session, by construction.
+> **New shell?** §4 covers from T-24h to T+15 min: more than one session, by construction.
 > Before any command of this step, rerun the **§4 preamble**, plus the §4.4 `export`s.
 
 > ### Between phase 1 and phase 2 the deploy key has signed nothing — and this is checked
@@ -935,7 +991,7 @@ must appear**: if none appears, go straight to the third outcome.
 > a person not doing something — so here it is measured, instead of recommended.
 >
 > ```bash
-> export DEPLOYER=<address of the deploy key, the one published at T-4>
+> need DEPLOYER   # exported in the §4 preamble: the address published at T-4
 > NONCE_ORA=$(cast nonce "$DEPLOYER" --rpc-url $RPC)
 > echo "nonce = $NONCE_ORA   (must be exactly 1: the §4.1 adapter consumed 0)"
 > if [ -z "$NONCE_ORA" ]; then
@@ -947,9 +1003,12 @@ must appear**: if none appears, go straight to the third outcome.
 > fi
 > ```
 >
-> A nonce other than `1` does **not** prevent the deploy and breaks nothing on-chain: the contracts
-> are born correctly wired anyway. What breaks is the announcement — and the only moment when
-> fixing it is cheap is **now**, before the §4.6.3 `setRouter` (§4.6.1).
+> A nonce other than `1` breaks nothing on-chain: the contracts would be born correctly wired anyway.
+> What breaks is the announcement — and the only moment when fixing it is cheap is **now**, before the
+> §4.6.3 `setRouter` (§4.6.1). Since 22/09 the script does **not** deploy on any nonce but the expected
+> one: `DeployCore` reverts `NonceMoved(actual, expected)` unless `vm.getNonce(deployer) ==
+> EXPECTED_NONCE` (default 1). To deploy on a shifted nonce after republishing the map, run it with
+> `EXPECTED_NONCE=<that nonce>` — deliberately, not by removing the check.
 
 With `JEVSAID_TOKEN` and `PONS_ESCROW_ADAPTER` in `.env` and in the environment.
 
@@ -960,8 +1019,12 @@ forge script script/DeployCore.s.sol --rpc-url $RPC
 ```
 
 It must print **`chain id (mainnet = 4663): 4663`**, the right token and the right adapter, and
-reach `SIMULATION COMPLETE`. If the adapter in `.env` is stale the script stops here with
-`AdapterHasNoCode`: this is intended, that address ends up verbatim in the one-shot `setRouter`.
+reach `SIMULATION COMPLETE` (the fork rehearsal checks that verdict line only; here read both). Four
+reverts are intended and stop the simulation before anything is sent: `AdapterHasNoCode` if the
+adapter in `.env` is stale (that address ends up verbatim in the one-shot `setRouter`);
+`TokenHasNoCode` / `RouterHasNoCode` if `JEVSAID_TOKEN` or `UNIVERSAL_ROUTER` has no code — both are
+`immutable` downstream, a wrong one is a redeploy and the ledger's genesis would move with it;
+`NonceMoved(actual, expected)` if the deploy key is not at nonce 1 (box above).
 
 **Then the deploy [IRREVERSIBLE]**, without `--verify`:
 
@@ -1043,8 +1106,8 @@ cast call $FEE_ROUTER 'keeper()(address)'             --rpc-url $RPC   # = $KEEP
 cast call $UNIV4_SWAP_ADAPTER 'universalRouter()(address)' --rpc-url $RPC
 # MUST be 0x8876789976dEcBfCbBbe364623C63652db8C0904
 
-# has the ownership handover started? (if not, you would find out only in 24h, when
-# executeBatch reverts because there is no transfer to accept)
+# has the ownership handover started? (if not, the §4.7 executeBatch reverts because there is
+# no transfer to accept — and the deploy key stays owner until you notice)
 for c in $FEE_ROUTER $REWARDS_DISTRIBUTOR $CALL_LEDGER; do
   OWN=$(cast call $c 'owner()(address)'        --rpc-url $RPC)
   PEND=$(cast call $c 'pendingOwner()(address)' --rpc-url $RPC)
@@ -1061,7 +1124,7 @@ cast call $UNIV4_SWAP_ADAPTER 'owner()(address)' --rpc-url $RPC
 
 If a `pendingOwner` is not the timelock, the corresponding `transferOwnership` did not go through:
 redo it now from the deployer (`cast send <contract> 'transferOwnership(address)' $TIMELOCK`), which
-is still owner, instead of finding out in 24 hours.
+is still owner, instead of finding out when the §4.7 batch reverts.
 
 > **Only if you have read it.** An **empty** `pending=` is not a wrong `pendingOwner`: it is a
 > read that did not happen (rule in the §4 preamble). Redoing a `transferOwnership` on that basis
@@ -1076,6 +1139,12 @@ is still owner, instead of finding out in 24 hours.
 > not leave it for after §4.6.4.
 
 #### 4.6.3 `setRouter` **[IRREVERSIBLE — only once in the contract's life]**
+
+> **Executed order ≠ numbered order, on purpose.** By the time you are here the §4.7 handover batch
+> has already gone through (§4.6.2 says to run it there, and the fork rehearsal does 4.7 before 4.6.3).
+> The order actually executed is **4.6.2 → 4.7 → 4.6.3 → 4.6.4**; the numbers were not changed
+> because too many cross-references (this document, the checklist, `engine/DEPLOY.md`) point at §4.7.
+> Check `getMinDelay()` = 86400 before this step; if it is still 0, do §4.7 first.
 
 From the `TIMELOCK_PROPOSER`, which is the adapter's owner:
 
@@ -1115,9 +1184,9 @@ cast call $PONS_ESCROW_ADAPTER 'router()(address)' --rpc-url $RPC   # = $FEE_ROU
 > comes first, and the comparison with the announcement stays but is neither the first step nor the only one.
 
 ```bash
-# The deployer's address, NOT its key: it is the one published at T-4 (§2.2), and the source is
-# the announcement, not the repo.
-export DEPLOYER=<address of the deployer wallet, as published at T-4 (§2.2)>
+# The deployer's address, NOT its key: it is the one published at T-4 (§2.2), exported in the §4
+# preamble, and the source is the announcement, not the repo.
+need DEPLOYER
 
 # 1) ANCHORING — depends on nothing outside this machine, so it comes first.
 #    Nonce 0 of this key MUST give the §4.1 adapter: if it does not, the key is a different one.
@@ -1155,7 +1224,7 @@ BS=https://robinhoodchain.blockscout.com/api
 # ARGS is reassigned in every block: if `cast abi-encode` fails it stays empty, and `need` stops
 # that verify instead of sending it with the wrong arguments (rule in the §4 preamble).
 ARGS=$(cast abi-encode 'c(uint256,address[],address[],address)' \
-      86400 "[$TIMELOCK_PROPOSER]" "[$Z]" $Z)
+      0 "[$TIMELOCK_PROPOSER]" "[$Z]" $Z)          # 0 = minDelay AT BIRTH, not 86400: see below
 need ARGS && forge verify-contract $TIMELOCK \
   lib/openzeppelin-contracts/contracts/governance/TimelockController.sol:TimelockController \
   --chain 4663 --verifier blockscout --verifier-url $BS --constructor-args "$ARGS"
@@ -1198,13 +1267,16 @@ need ARGS && forge verify-contract $UNIV4_SWAP_ADAPTER \
 > on this chain are normal: the right answer and the wrong one look alike, you tick the
 > box and never verify anything.
 
-`86400` is the timelock's `minDelay` (24 hours), the executors are `[address(0)]` (anyone) and
-the admin is `address(0)` (nobody) — the same values `DeployCore` passes to the constructor.
+`0` is the timelock's `minDelay` **at birth** (`script/DeployCore.s.sol:94`, since 22/09): §4.7
+raises it to 86400 afterwards with `updateDelay`, but the constructor argument — and therefore the
+bytecode the verifier compares against — carries the birth value. Encoding `86400` here fails on a
+bytecode mismatch that looks exactly like the usual Cloudflare 403. The executors are `[address(0)]`
+(anyone) and the admin is `address(0)` (nobody) — the same values `DeployCore` passes to the constructor.
 
 > **The `FeeRouter` constructor takes six addresses, not five**, and the order is
 > `token, owner, computeWallet, opsWallet, teamWallet, keeper` — `teamWallet` comes **after**
-> `opsWallet` and **before** `keeper`. Read from `src/FeeRouter.sol` and confirmed by the call in
-> `script/DeployCore.s.sol:82`, which is the one that actually deployed the contract.
+> `opsWallet` and **before** `keeper`. Read from `src/FeeRouter.sol:65-72` and confirmed by the call in
+> `script/DeployCore.s.sol:97`, which is the one that actually deployed the contract.
 >
 > **Do not guess the order if the command fails.** An encoding with the wrong order — or with
 > five arguments — does not produce an honest error: in the worst case it produces a **verified
@@ -1254,18 +1326,30 @@ minutes, and needs care because two rules of this runbook seem to contradict eac
 > need MD && echo "minDelay = $MD   (MUST be 86400)"
 > ```
 > Then the owner check at the end of this section (all four = `$TIMELOCK`). Rehearsed on the mainnet
-> fork (`contracts/scripts/rehearse-launch-fork.sh`), including that a later `schedule` under 24h reverts.
+> fork (`contracts/scripts/rehearse-launch-fork.sh`), including that a later `schedule` under 24h reverts
+> (since 22/09 the rehearsal's negative checks have three outcomes — went through / reverted / **not
+> measured** — so a dead RPC can no longer pass as a revert), and pinned by
+> `test/DeployOrder.t.sol::test_handover_batch_takes_ownership_and_sets_24h`.
 > **The rest of this section describes the old 24-hour window**: it now applies only to the minutes
 > before the batch, and its emergency rules still hold in those minutes.
+>
+> **One key is outside the timelock for a whole day, and it is not the deploy key.** From the §4.1
+> adapter deploy (T-24h) until §4.6.3, the `TIMELOCK_PROPOSER` alone — as the adapter's owner — can
+> call the one-shot `setRouter` towards **any** contract with code (`src/PonsEscrowAdapter.sol:32-40`):
+> irreversible, and every future creator fee would go there (§9.2). No batch, no delay, no second
+> signer stands in front of it, and the rehearsal cannot exercise this because there is nothing to
+> assert. Keep that key offline from §4.1 to §4.6.3, and sign nothing with it before the batch above.
 
 Until the `acceptOwnership`, **`DEPLOYER_PK` is owner** of FeeRouter, RewardsDistributor and
 CallLedger, and can change their splits, wallets, keeper and scorer **with no wait at all**.
 
-> **How long the window really lasts.** The title says "T+5 min → T+24h", but the 24 hours start
-> from the **`scheduleBatch`**, not from the deploy. If the batch is scheduled where the command is written
-> — after §4.6.3 and all of §4.6.4 — the real window is 24 hours **plus** those two steps, i.e.
-> plus the Dexscreener claim and five `forge verify-contract` calls against an endpoint that answers 403.
-> That is why §4.6.2 says to schedule it **there**, as soon as the three `pendingOwner` values are right.
+> **How long the window really lasts.** It runs from the end of `DeployCore` to the **`executeBatch`**
+> in the box above — **minutes**, if the batch is run where §4.6.2 says, as soon as the three
+> `pendingOwner` values are right. (Until 22/09 the title of this section read "T+5 min → T+24h" and
+> the 24 hours started from a `scheduleBatch`; a batch scheduled after §4.6.4 meant 24 hours **plus**
+> the Dexscreener claim and five `forge verify-contract` calls. That arithmetic is gone: the timelock is
+> born with delay 0 and the batch is scheduled and executed in the same minute.) What is left of the old
+> window is the time you spend between the two scripts and the box above — do not spend it on §4.6.4.
 
 **What the key can do in this window, in full** — you need this clear before the
 cases below, because two of these items are not obvious:
@@ -1275,15 +1359,18 @@ cases below, because two of these items are not obvious:
 | `FeeRouter` | `setWallets(x,x,x)` then `withdrawCompute/Ops/Team` | **all three buckets**, in two transactions |
 | `FeeRouter` | `setSwapAdapter(<their contract>)` | the swap bucket leaves at the first `processSwap` |
 | `FeeRouter` | `setSplits(...)`, `setRewardsDistributor(...)`, `setKeeper(...)` | diverts **future** fees |
-| `RewardsDistributor` | `setMaxEpochBudgetBps(10000)` + `setScorer(<theirs>)` + `setGuardian(<theirs>)`, then a root over the whole pool | **100% of the pool**, claimable after `CLAIM_DELAY` = **12 hours**: inside the 24-hour window, and with the guardian valve already disarmed |
+| `RewardsDistributor` | `setMaxEpochBudgetBps(10000)` + `setScorer(<theirs>)` + `setGuardian(<theirs>)`, then a root over the whole pool | **Old window; today moot.** With a 24-hour window, 100% of the pool was claimable after `CLAIM_DELAY` = **12 hours**, inside the window and with the guardian valve disarmed. In a window of minutes no root can be set at all: `setEpochRoot` reverts `EpochNotEnded` (`src/RewardsDistributor.sol:105`) until genesis + 6h, and the distributor holds 0 tokens until the first `processSwap` anyway |
 | `CallLedger` | `setPublisher` | no funds |
 
-The `RewardsDistributor` row is the surprising one: **12 hours fit inside 24**, so the
-timelock does not arrive in time even if you notice right away, and `voidEpoch` does not help because
-the attacker has already made itself guardian. The only defense that arrives in time is **not putting tokens
-in there**: the only thing that fills the pool is the `FeeRouter`'s `processSwap` (apart from
-someone sending tokens to that address on their own initiative), so as long as you do not run it the
-distributor has a balance of **zero** and there is nothing to steal. See §6.1.
+The `RewardsDistributor` row was the surprising one when the window lasted a day: **12 hours fit
+inside 24**, so the timelock did not arrive in time even if you noticed right away, and `voidEpoch`
+did not help because the attacker had already made itself guardian. The row is kept because the
+reasoning explains two rules that still stand: the distributor is not funded before the batch (the
+only thing that fills the pool is the `FeeRouter`'s `processSwap`, apart from someone sending tokens
+to that address on their own initiative — see §6.1), and the batch is run **immediately**, not after
+§4.6.4. The setters that would divert **future** fees (`setSwapAdapter`, `setRewardsDistributor`,
+`setKeeper`, `setWallets`, `setSplits`) are the live part of this table, and §4.6.2 reads all of
+them back before the batch.
 
 These are two different things, and they must be kept apart:
 
@@ -1293,15 +1380,15 @@ These are two different things, and they must be kept apart:
   **This rule applies to `DEPLOYER_PK`, not to the launch EOA** (§2.1), which instead must
   stay available and attended for the Dexscreener profile claim (§4.6.4). They are two
   different wallets and they have two opposite rules: confusing them gets the wrong one archived.
-- **Emergency use: it is your only fast lever, and it expires at T+24h.** If the §4.6.2 checks
+- **Emergency use: it is your only fast lever, and it expires at the `executeBatch`.** If the §4.6.2 checks
   reveal wrong wiring — `setSwapAdapter`, `setRewardsDistributor` or `setKeeper` on a
   wrong address — **it is corrected now from the deployer**, in one transaction. After
   the `acceptOwnership` the same correction costs 24 hours of timelock, during which the swap
   bucket stays stuck or the wrong keeper can act. Pulling the lever is right **only** to
   put a value back on the track this runbook expects, never to change policy.
-- **If you suspect the deployer key is compromised in this window**: do not wait for
-  T+24h, and **do not assume any bucket is safe**. In this window the attacker **is the owner**,
-  and the owner can reassign the wallets. In this order:
+- **If you suspect the deployer key is compromised in this window**: do not wait, and **do not
+  assume any bucket is safe**. In this window the attacker **is the owner**, and the owner can
+  reassign the wallets. In this order:
 
   1. **First of all the wallets collect, right away, before any other move.**
      `COMPUTE_WALLET`, `OPS_WALLET` and `TEAM_WALLET` call their own `withdraw*()` (§6.4): one
@@ -1364,27 +1451,75 @@ rehearsal: the engine refuses a database that belongs to another ledger and woul
    `V4_START_BLOCK` = head − 1,700,000, `MODEL=none`, no `CALL_LEDGER`. The PoolManager index needs
    25-40 minutes to reach the head: started at T0 it would make the first epoch late.
 2. **T+5, after DeployCore (§4.6).** Set `TOKEN=$JEVSAID_TOKEN`, `LAUNCH_BLOCK` (§4.4),
-   `CALL_LEDGER`, `KEEPER_PK`, **`LEDGER_START_BLOCK` = block of the DeployCore transactions**
-   (`cast receipt <any DeployCore tx> blockNumber`, now REQUIRED by the engine), `MODEL=jev`,
-   `TYPESAFE_API_KEY`, `JEV_MODEL`. The Transfer cursor is per token, so switching `TOKEN` is clean.
+   `CALL_LEDGER`, `KEEPER_PK`, **`LEDGER_START_BLOCK` = the block of the Timelock transaction** — the
+   first of the twelve, read from `broadcast/DeployCore.s.sol/4663/run-latest.json` (the twelve span
+   several 0.1-second blocks; the `CallLedger` is the fourth, so its own block would also work, only
+   because no question can exist before `CALL_LEDGER` is set — take the first and do not reason about
+   it), `TYPESAFE_API_KEY` **before** `MODEL=jev` (`MODEL=jev` without the key throws at boot),
+   `JEV_MODEL`. The Transfer cursor is per token, so switching `TOKEN` is clean.
    The engine reads the genesis from the contract: `$CALL_LEDGER_GENESIS` is for your notes and for
    the §4.6.4 verification, not an engine variable.
    Prerequisite: **one real call to TypeSafe checked by hand** before T0 (`engine/README.md`).
-3. **Rewards: first root by hand.** Leave `REWARDS_DISTRIBUTOR`/`SCORER_PK` unset on Railway at first.
-   When epoch 0 has ended, in YOUR shell (not on Railway) export `REWARDS_DISTRIBUTOR`, `SCORER_PK`,
-   `EXCLUDE`, `LEDGER_START_BLOCK` and the engine's `DATABASE_URL`, run
-   `node --import tsx src/cli/main.ts close-epoch 0` (it computes, it does not publish), read the
-   PAYABLE payload, and only then set the variables on Railway. It is PAYABLE only if a buyback has
-   already funded the distributor (step 4). `EXCLUDE` = distributor, ledger, router,
-   swap adapter, `TEAM_WALLET`, the team's wallets, the PoolManager `0x8366…` and the Pons curve:
-   they hold tokens and must never be scored.
-4. **Fees: right after the §4.7 handover batch** (minutes after DeployCore, not 24h). `FEE_ROUTER` and
-   `PONS_ESCROW_ADAPTER` stay unset only until `getMinDelay()` reads 86400 and the three owners are the
-   timelock: before that the deploy key could still drain the distributor. Then set them: the first
-   buyback funds the distributor and the first epochs are paid (an epoch that closes with an empty
-   distributor is stored NOT_PAYABLE for good).
+3. **Rewards: first root by hand — at the end of epoch 1, not of epoch 0.** Leave
+   `REWARDS_DISTRIBUTOR`, `SCORER_PK`, `LEDGER_START_BLOCK` and `EXCLUDE` unset on Railway at first.
+   `close-epoch 0` answers `WAIT` until **every question of epoch 0 is resolved**, i.e. deadline +
+   horizon (6h): the earliest useful moment is the end of epoch 1, about **T+12h**. Then, in YOUR
+   shell (not on Railway), `cd engine` and export **all ten** variables the command loads at start —
+   missing any one of them exits 2 with `missing environment variable`:
+   `DATABASE_URL`, `RPC_URL`, `TOKEN`, `LAUNCH_BLOCK` (base config), `CALL_LEDGER`, `KEEPER_PK`
+   (ledger config), `REWARDS_DISTRIBUTOR`, `SCORER_PK`, `LEDGER_START_BLOCK`, `EXCLUDE` (rewards
+   config). Two of them are not what they look like:
+   - `KEEPER_PK`: `close-epoch` without `--publish` **never signs with it** — any 32-byte hex
+     satisfies the loader. Do not export the real keeper key into a laptop shell for a dry run.
+   - `DATABASE_URL`: the Railway **public** URL (TCP proxy), not `postgres.railway.internal`, which
+     resolves only inside Railway.
+   Run `node --import tsx src/cli/main.ts close-epoch 0` (it computes, it does not publish
+   **on-chain**), read the `PAYABLE` payload, and only then set the four rewards variables on Railway
+   (step 3b). Two things the words "dry run" hide:
+   - **it writes to the production database.** `close-epoch` runs `indexCalls` into the shared
+     `calls` table and stores the verdict in the shared `epochs` table: a `NOT_PAYABLE` stored by your
+     hand run is **final for the service**, which skips `PUBLISHED`/`NOT_PAYABLE` epochs
+     (`engine/src/server/service.ts:110-117`). Consistent with step 4 — an epoch that closes with an
+     empty distributor is `NOT_PAYABLE` for good — but it is the hand run that makes it final;
+   - **every hour you are late is an hour of permanent lag.** The contract wants ≥ 6h between two
+     roots (`EpochTooSoon`, `src/RewardsDistributor.sol:108`) and epochs last 6h, so the cadence can
+     never catch up: root(0) landing at T+13h instead of T+12h delays root(1), root(2)… and each of
+     their 12h claim openings by that hour, for good. Only a `NOT_PAYABLE` epoch (no root, no spacing
+     consumed) absorbs lag. The engine waits, it does not burn gas.
+   It is `PAYABLE` only if a buyback has already funded the distributor (step 4); with an empty
+   distributor it stores `NOT_PAYABLE` ("distributor has no free balance") and epoch 0 is unpaid,
+   which is acceptable and expected if fees were thin.
+   `EXCLUDE`: the canonical list is in `engine/DEPLOY.md` — operatively the team EOAs and
+   `TEAM_WALLET` (only an address that can call `submit` can ever be a beneficiary; the contracts,
+   the PoolManager and the curve are harmless padding). The engine drops excluded callers before
+   scoring and refuses the root if one still appears among the beneficiaries.
+   **Then the four rewards variables go on Railway in ONE change, before the end of epoch 2.**
+   `REWARDS_DISTRIBUTOR` alone crash-loops the service: with it set, boot loads the rewards config,
+   which requires `SCORER_PK`, `LEDGER_START_BLOCK` and `EXCLUDE` — a missing one throws, exit 2,
+   Railway `ON_FAILURE` restarts up to 10 times (`engine/railway.json`). Config is read once at boot;
+   Railway redeploys on any variable change; no re-index (cursors and `epochs` persist in Postgres,
+   `assertSingleLedger` passes because the ledger is unchanged). The service then publishes root(0)
+   itself from the stored `PAYABLE` payload.
+4. **Fees: right after the §4.7 handover batch AND the §4.6.3 `setRouter`** (minutes after
+   DeployCore, not 24h). Set `FEE_ROUTER` and `PONS_ESCROW_ADAPTER` only when **both** are true:
+   `getMinDelay()` reads 86400 with the three owners = timelock (§4.7 — before that the deploy key
+   could still redirect the router), **and** `router()` on the adapter = `$FEE_ROUTER` (§4.6.3 —
+   before that `claim()` reverts `NotSet`, `src/PonsEscrowAdapter.sol:51`, and the treasury task
+   fails every cycle: blind, not destructive, but it is noise you would then have to tell apart from
+   a real fault). Then set them: the first buyback funds the distributor and the first epochs are paid
+   (an epoch that closes with an empty distributor is stored NOT_PAYABLE for good).
 5. **Site.** `NEXT_PUBLIC_TOKEN_ADDRESS` is build-time: set it on the site service and redeploy at
    T0+. `ENGINE_FEED_URL` = the engine's private domain on Railway.
+6. **Announcer.** Nothing posts until `ANNOUNCE_MODE` is set (default `off`). At T-1h set
+   `ANNOUNCE_MODE=test` with `TELEGRAM_BOT_TOKEN` and `TELEGRAM_TEST_CHAT_ID` (every post, both
+   channels' versions, goes to that one private chat), plus `PUBLIC_SITE_URL=https://www.jevsaidit.com`
+   and the four X credentials `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_SECRET` —
+   **all four or none**: half of them is a boot error, none of them means X posts are recorded as
+   `unconfigured` and never sent later. Switch to `ANNOUNCE_MODE=live` (with `TELEGRAM_CHANNEL_ID`,
+   the bot admin of the channel) only **after the first epoch is visible on the feed**, so the first
+   public post describes something that exists. The X day is capped (`X_DAILY_CAP`, default 6) and 2
+   slots are reserved for the epoch verdict and 1 for the buyback, so a batch opening cannot exhaust
+   the cap before the verdict. Variables table in `engine/DEPLOY.md`.
 
 - **5.1 — T+10 min or so**: the engine opens the first epoch (`openQuestions` from the `KEEPER`) on
   its own once `CALL_LEDGER` and `MODEL` are set and the index is at the head.
@@ -1399,9 +1534,11 @@ rehearsal: the engine refuses a database that belongs to another ledger and woul
   With the §1.3 model this check is **stronger** than before, not weaker: the
   `TEAM_WALLET` holds no tokens, so it cannot legitimately appear in any root, and if
   it appears it is a symptom — see point 3 of §7.
-- **5.5 — first `processSwap`: deliberately small.** See §6.1. It is not a generic
-  prudence detail: it is the very first time `minOut` is computed on the
-  $JEVSAIDIT pool, which did not exist until yesterday.
+- **5.5 — first `processSwap`: sent by the engine, not by hand.** See §6.1. Since `FEE_ROUTER` is
+  set (step 4) the treasury task sends one `processSwap` per epoch, at a secret time inside the
+  epoch, only if the bucket is ≥ 0.005 ETH, with `minOut` from the pool's own state. It is still the
+  very first time `minOut` is computed on the $JEVSAIDIT pool, which did not exist until yesterday:
+  read the first `SwapProcessed` against the quote on `/treasury` (§6.1 point 3).
 - **5.6 — first 72 hours**: **the splits are not changed.** If the data says they must change, they
   change on day 4, via the timelock, with 24h of public notice.
 - **5.7 — from the launch block, continuously**: the `Transfer` indexer. See below: it is
@@ -1438,7 +1575,11 @@ down and the log window passes, those epochs **cannot be reconstructed**:
 3. the budget returns to the free balance. **The winners of the voided epoch are not paid later**: the engine does not rescore a voided epoch, and its number cannot be published again (`RootExists`). The budget goes to the following epochs' winners. Decided on 22/09: simpler, and nothing to exploit.
 
 **When in doubt nobody is paid, rather than paying wrongly.** A wrong root that has been claimed does not come
-back; a postponed round of rewards can be recovered.
+back; a postponed round of rewards can be recovered — **only while no later root has been
+published**: epochs are strictly increasing (`EpochNotIncreasing`, `src/RewardsDistributor.sol:107`),
+so once root(N+1) is on-chain, root(N) can never be set. The engine guarantees the order by blocking
+on the earliest epoch that is neither published nor declared `NOT_PAYABLE`
+(`engine/src/server/service.ts:110-117`); a root published by hand out of order would not.
 
 ---
 
@@ -1446,10 +1587,10 @@ back; a postponed round of rewards can be recovered.
 
 | Action | Who | Command |
 |---|---|---|
-| collect the creator fees | anyone | `cast send $PONS_ESCROW_ADAPTER 'claim()'` |
-| split into the buckets | anyone | `cast send $FEE_ROUTER 'distribute()'` |
-| buyback + burn + rewards | **`KEEPER` only** | `cast send $FEE_ROUTER 'processSwap(uint256)' <minOut>` |
-| publish the root | **`SCORER` only** | `setEpochRoot(epoch, root, budget)` |
+| collect the creator fees | anyone — **done by the engine** (treasury task, once `FEE_ROUTER` is set) | `cast send $PONS_ESCROW_ADAPTER 'claim()'` — manual only with `FEE_ROUTER` unset |
+| split into the buckets | anyone — **done by the engine** (`processSwap` calls `distribute()` first) | `cast send $FEE_ROUTER 'distribute()'` — manual only with `FEE_ROUTER` unset |
+| buyback + burn + rewards | **`KEEPER` only** — **done by the engine**: one per epoch, at a secret time in [start+1h, end−1h], only if the bucket ≥ `MIN_SWAP_WEI` = 0.005 ETH, `minOut` = pool quote − hook cut − 300 bps | `cast send $FEE_ROUTER 'processSwap(uint256)' <minOut>` — manual only with `FEE_ROUTER` unset; a hand-sent one is invisible to the engine (its next pass finds a small bucket → `SWAP_SKIPPED`, harmless) |
+| publish the root | **`SCORER` only** — done by the engine (rewards task) | `setEpochRoot(epoch, root, budget)` |
 | void a suspicious epoch | **`GUARDIAN`** or timelock | `voidEpoch(epoch)`, within `CLAIM_DELAY` = 12h (§7) |
 | withdraw the compute bucket | **`COMPUTE_WALLET` only** | `cast send $FEE_ROUTER 'withdrawCompute()'` (§6.4) |
 | withdraw the ops bucket | **`OPS_WALLET` only** | `cast send $FEE_ROUTER 'withdrawOps()'` (§6.4) |
@@ -1489,22 +1630,34 @@ back; a postponed round of rewards can be recovered.
 > If `committed` rises and never falls, there are epochs to sweep: and every epoch not swept is
 > a piece of cap lost for all future ones.
 
-Before every `processSwap`:
+Before every `processSwap` (and after every `claim()` — see the note):
 
 ```bash
 cast call $PONS_ESCROW_ADAPTER 'claimable()(uint256)' --rpc-url $RPC
 cast call $FEE_ROUTER 'swapBalance()(uint256)'        --rpc-url $RPC
 ```
 
+> **`claim()` swallows every escrow revert, not only "zero balance"** (`try escrow.claim() {} catch {}`,
+> `src/PonsEscrowAdapter.sol:52`). A paused escrow, or one whose recipient was changed on the factory,
+> looks identical to "nothing owed": the call succeeds and forwards 0. The only way to tell them apart
+> is `claimable()` **before and after**: if it was non-zero before and is still non-zero after, the
+> escrow did not pay and the reason is upstream, not in our contracts. The engine's treasury task does
+> this comparison; whoever calls `claim()` by hand must do it too.
+
 `processSwap` must be sent in a **random block inside the window**, so as not to be
-front-runnable, and `minOut` is computed as in §1.2. **The burn is irreversible**: the burn share
-goes to `0x…dEaD` in the same transaction.
+front-runnable, and `minOut` is computed as in §1.2 — the engine does both (`engine/src/treasury/`:
+time = hash(secret, epoch) mapped into the epoch minus 1h at each end; `minOut` from `slot0` and
+`liquidity`, minus the hook cut read on-chain, minus `SWAP_SLIPPAGE_BPS` = 300). **The burn is
+irreversible**: the burn share goes to `0x…dEaD` in the same transaction (skipped only when the burn
+share rounds to 0).
 
 ### 6.1 The first `processSwap` is kept small — but not before the §4.7 `executeBatch`
 
 > ### Which of the two rules wins, and why
 > This section says "early"; §4.7 says "not before the `acceptOwnership` is **executed**".
-> For the first 24 hours the two contradict each other, and **§4.7 wins**.
+> Until the handover batch has gone through — minutes, since 22/09 — the two contradict each other,
+> and **§4.7 wins**. In practice the conflict has dissolved: `FEE_ROUTER` is set on the engine only
+> after the batch (§5.0 step 4), and the engine is what sends `processSwap`.
 >
 > It is not a matter of generic prudence; they are two risks of different size. The §6.1 risk
 > is getting `minOut` wrong on a bucket that at that point is worth little: if you get it wrong, `processSwap`
@@ -1517,27 +1670,31 @@ goes to `0x…dEaD` in the same transaction.
 > means keeping that contract at a balance of **zero** for the whole window: the defense costs nothing and
 > asks nobody to keep watch.
 >
-> The cost is that the first `processSwap` will be one of 24 hours of fees instead of a few hours. It is
-> still the smallest bucket the system will ever have after that point, and "small" remains
-> true in a practical sense: what is lost is a little margin on the first `minOut`
-> experiment, not a defense.
+> The cost was that, with a 24-hour window, the first `processSwap` would have been one of 24 hours
+> of fees instead of a few hours. With the batch in minutes the cost is gone: the first bucket is
+> whatever accrues before the engine's first swap time.
 
 `processSwap` consumes the **whole** `swapBalance` in one go: there is no parameter to spend
-only part of it. So "small" is obtained by running it **early** — as soon as the §4.7 handover is
-closed — when the bucket has accumulated little:
+only part of it. "Small" is therefore not a decision any more: **the engine decides when**, and its
+rule is one swap per epoch, at a time derived from a secret and the epoch number (unpredictable
+outside, stable across restarts), only if the bucket is at least `MIN_SWAP_WEI` = **0.005 ETH**
+(below it: `SWAP_SKIPPED`, carried to the next epoch), with `minOut` = in-range quote from `slot0`
+and `liquidity` − hook cut (re-read on-chain) − **300 bps** (`SWAP_SLIPPAGE_BPS`). The old "early and
+small" rule below is kept for the case where `FEE_ROUTER` is unset and someone runs it by hand:
 
 1. Do not wait for fees to accumulate for days before the first attempt. As soon as
    `swapBalance()` is non-zero and worth an amount you would be comfortable losing entirely,
    run that one.
 2. Compute `minOut` as in §1.2 and send it.
 3. Read the `SwapProcessed` event (topic0 in the table below) and compare `tokenOut` with the quote
-   you had used: the difference is your real estimation error on this pool, and from there on
-   you calibrate the slippage tolerance on a measured number, not on a guess.
+   used (the engine's is on `/treasury`): the difference is the real estimation error on this pool,
+   and from there on the slippage tolerance is calibrated on a measured number, not on a guess.
 4. Only after a `processSwap` has succeeded, let the bucket grow at the normal
    pace.
 
-If the first one reverts with `Slippage()`, you have lost nothing: the bucket is intact, you got
-`minOut` wrong. Recompute it and repeat.
+If the first one reverts with `Slippage()`, you have lost nothing: the bucket is intact, `minOut`
+was wrong. Recompute it and repeat — the engine records it as `SWAP_REVERTED` and retries in the
+next epoch.
 
 ### 6.2 How the fees are really split
 
@@ -1552,7 +1709,7 @@ team **2000** (20%), and the rest — **6500**, i.e. 65% — into the swap bucke
 > a cosmetic detail — on an amount no bps divides exactly, the nominal version
 > loses wei on every `distribute()`.
 
-**On the tokens bought** (`processSwap`, `src/FeeRouter.sol:151`): the burn is `burnBps / (burnBps +
+**On the tokens bought** (`processSwap`, `src/FeeRouter.sol:155`): the burn is `burnBps / (burnBps +
 rewardsBps)` = `1500 / 6500` ≈ **23.08%** of the tokens, the rest ≈ **76.92%** to the RewardsDistributor.
 Those percentages are **within the swap bucket**, not on the fee total.
 
@@ -1650,10 +1807,11 @@ are four twelve-hour windows, overlapping. **A guardian who does not watch is no
 > ### Why it is the only actor, and why it sits on a hot key
 > `voidEpoch` accepts the guardian **or** the owner. But after §4.7 the owner is the
 > `TimelockController` with `minDelay` = **24 hours**, and **an operation scheduled on a 24-hour
-> timelock cannot land inside a 12-hour window**: arithmetic, not prudence. From T+24h onwards
-> the owner path is dead for voiding, and the guardian is the only address that can void
-> an epoch — forever. (Before T+24h the deployer is still owner and could do it right away, but
-> it is a window that closes and must not be built into plans.)
+> timelock cannot land inside a 12-hour window**: arithmetic, not prudence. From the §4.7 handover
+> batch onwards — minutes after `DeployCore`, since 22/09 — the owner path is dead for voiding, and
+> the guardian is the only address that can void an epoch — forever. (Before the batch the deployer
+> is still owner and could do it right away, but no root can exist yet — `EpochNotEnded` until
+> genesis + 6h — so that window is not one to build into plans.)
 >
 > Two things follow from this that seem contradictory and are not:
 >

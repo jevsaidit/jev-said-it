@@ -5,7 +5,12 @@ const env = (v: string | undefined) => (v && v.trim() !== "" ? v.trim() : undefi
 
 export const TICKER = env(process.env.NEXT_PUBLIC_TICKER) ?? "JEVSAIDIT";
 export const TOKEN_ADDRESS = env(process.env.NEXT_PUBLIC_TOKEN_ADDRESS);
-export const SITE_URL = env(process.env.NEXT_PUBLIC_SITE_URL) ?? "https://jevsaidit.com";
+// Always the www host: the apex has no certificate, so a printed apex URL is a dead link in a browser.
+export const SITE_URL = env(process.env.NEXT_PUBLIC_SITE_URL) ?? "https://www.jevsaidit.com";
+export const SITE_HOST = new URL(SITE_URL).host;
+// Optional, printed only when set: the timelock that owns the router and the distributor after the
+// handover. Nothing is guessed: without it the page states the design, not an address.
+export const TIMELOCK_ADDRESS = env(process.env.NEXT_PUBLIC_TIMELOCK_ADDRESS);
 
 export const LINKS = {
   x: "https://x.com/jevsaidit",
@@ -24,14 +29,17 @@ export const LEDGER = {
   maxCallsPerEpoch: 50,
 } as const;
 
-// docs/2026-09-21-verdict-engine-spec.md §3, §6, §7
+// docs/2026-09-21-verdict-engine-spec.md §3, §6, §7; contracts/src/RewardsDistributor.sol
 export const RULES = {
   horizonHours: 6,
+  referenceWindowMinutes: 10, // engine/src/questions/open.ts REFERENCE_WINDOW_SEC = 600
   minResolvedCalls: 3,
   paidTopPercent: 10,
   unresolvableCapPercent: 20,
-  claimDelayHours: 12,
-  maxEpochBudgetPercent: 20,
+  claimDelayHours: 12, // CLAIM_DELAY
+  claimWindowDays: 90, // CLAIM_WINDOW, then sweepExpired
+  maxEpochBudgetPercent: 20, // maxEpochBudgetBps today; the owner can change it
+  timelockHours: 24, // the owner of FeeRouter and RewardsDistributor after the handover
 } as const;
 
 // contracts/src/FeeRouter.sol: default split of the ETH that enters the router.

@@ -110,8 +110,11 @@ It does not cost a new contract: it is the same `bytes32` the contract already r
 
 ## 5. Constraints the `CallLedger` places on the engine
 
-They are all in the code, and none is checked by the contract. If the engine gets them wrong, the questions
-exist but **nobody can answer**, and nobody sees it until someone tries.
+They are all in the engine's code. Since 22/09/2026 the contract checks the first two on its own
+(`WrongEpoch`, `DeadlinePastEpoch`) and refuses to reopen an id already open in the epoch
+(`AlreadyOpen`); the rest, and the stricter margins, stay the engine's. If the engine gets them wrong,
+the transaction reverts in simulation and nothing is sent, instead of questions that exist but
+**nobody can answer**.
 
 1. **`epoch` passed to `openQuestions` = `currentEpoch()` read on-chain at that moment.**
    `submit` looks up the question under `currentEpoch()`: a wrong epoch gives no error

@@ -17,7 +17,7 @@ trap 'kill $ANVIL $SERVE $WEB 2>/dev/null; rm -rf $LOG' EXIT; sleep 2
 MN="test test test test test test test test test test test junk"
 k() { cast wallet private-key "$MN" $1; }
 PK0=$(k 0); DEP=$(cast wallet address $PK0); PKS=$(k 8); SCORER=$(cast wallet address $PKS); GUARD=$(cast wallet address $(k 9))
-U1=$(cast wallet address $(k 1)); U2=$(cast wallet address $(k 2))
+U1=$(cast wallet address $(k 1)); U2=$(cast wallet address $(k 2)); U3=$(cast wallet address $(k 3))
 ok=0; ko=0
 check() { if [ "$1" = "$2" ]; then echo "  ✓ $3"; ok=$((ok+1)); else echo "  ✗ $3 — expected '$2', got '$1'"; ko=$((ko+1)); fi; }
 has() { if echo "$1" | grep -q -- "$2"; then echo "  ✓ $3"; ok=$((ok+1)); else echo "  ✗ $3 — '$2' not in: $1"; ko=$((ko+1)); fi; }
@@ -38,6 +38,7 @@ q() { node scripts/sql.mjs "$1"; }
 
 TOK=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast test/mocks/MockERC20.sol:MockERC20 | awk '/Deployed to/{print $3}')
 send $TOK 'mint(address,uint256)' $U1 100000$E18 --private-key $PK0
+send $TOK 'mint(address,uint256)' $U3 20000$E18 --private-key $PK0   # U3: holds before the epoch, will reject in the wallet
 warp 5; GEN=$(now)
 LED=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast src/CallLedger.sol:CallLedger --constructor-args $TOK $DEP $DEP $GEN | awk '/Deployed to/{print $3}')
 DIST=$(cd $CONTRACTS && forge create --rpc-url $A --private-key $PK0 --broadcast src/RewardsDistributor.sol:RewardsDistributor --constructor-args $TOK $DEP $SCORER $GUARD $GEN | awk '/Deployed to/{print $3}')
@@ -59,8 +60,9 @@ node --import tsx src/cli/main.ts serve > $LOG/serve.log 2>&1 & SERVE=$!
 until_ '[ "$(get /epochs/current | jq ".questions|length")" = 3 ]'
 
 cd $SITE
-# A production build that knows the local chain (31337); real builds never do.
-rm -rf .next && NEXT_PUBLIC_ALLOW_ANVIL=1 NEXT_PUBLIC_ANVIL_RPC=$A pnpm build >/dev/null
+# A production build that knows the local chain (31337); real builds never do. The token address is
+# what opens /api/feed/config: without it the site is pre-launch and the panel never loads the wallet.
+rm -rf .next && NEXT_PUBLIC_ALLOW_ANVIL=1 NEXT_PUBLIC_ANVIL_RPC=$A NEXT_PUBLIC_TOKEN_ADDRESS=$TOK pnpm build >/dev/null
 # The feed proxy caches for 30s on disk: a previous run's questions must not leak into this one.
 rm -rf .next/cache/fetch-cache
 ENGINE_FEED_URL=$S node_modules/.bin/next start -p $WP -H 127.0.0.1 > $LOG/site.log 2>&1 & WEB=$!
@@ -104,6 +106,13 @@ echo "2. U2 bought after the epoch started: the panel does not let it waste gas 
 R=$(browse $U2 late u2-late)
 has "$(echo "$R" | jq -r .before)" "You bought after this epoch started" "U2 is told why"
 check "$(echo "$R" | jq -r .submitDisabled) $(echo "$R" | jq -r .agreeDisabled)" "true true" "submit and the picks are disabled"
+
+echo "2b. U3 presses Reject in the wallet: the panel says so, and nothing was sent"
+R=$(browse $U3 reject u3-reject)
+has "$(echo "$R" | jq -r .tx)" "You rejected it in the wallet" "the rejection is named, not shown as a selector"
+check "$(echo "$R" | jq -r '.hash // "none"')" none "no transaction hash: nothing left the wallet"
+check "$(cast call $LED 'callsUsed(uint256,address)(uint256)' 0 $U3 --rpc-url $A)" 0 "on-chain: 0 calls recorded for U3"
+[ "$(echo "$R" | jq -r '.error // empty')" ] && echo "   error: $(echo "$R" | jq -r .error) | $(echo "$R" | jq -r .panel)"
 
 echo "3. the epoch settles, the root is published, U1 claims from the panel"
 DL=$(get /epochs/0 | jq -r '.questions[0].deadline')

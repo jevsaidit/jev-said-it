@@ -1,8 +1,9 @@
 import type { CSSProperties } from "react";
+import { Addresses } from "@/components/Addresses";
 import { LiveFeed } from "@/components/LiveFeed";
 import { Play } from "@/components/Play";
 import { Receipt } from "@/components/Receipt";
-import { CHAIN, FEE_SPLIT, LEDGER, LINKS, RULES, SITE_URL, TICKER, TOKEN_ADDRESS } from "@/lib/site";
+import { CHAIN, FEE_SPLIT, LEDGER, LINKS, RULES, SITE_URL, TICKER, TIMELOCK_ADDRESS, TOKEN_ADDRESS } from "@/lib/site";
 
 const T = `$${TICKER}`;
 
@@ -20,7 +21,8 @@ const EPOCH = [
   {
     t: `close + ${RULES.horizonHours}h`,
     h: "Settle",
-    p: "The average price over the ten minutes before the close against the same average six hours later. Strictly higher counts as up. A price pushed in the last block barely moves an average.",
+    // spec §3 / RULE_A: the average is of sqrtPriceX96, not of the price; the two can order two windows differently.
+    p: `The pool's sqrtPriceX96, averaged over the ${RULES.referenceWindowMinutes} minutes before the close, against the same average ${RULES.horizonHours} hours later. A lower sqrtPriceX96 is a higher price; strictly higher counts as up. A price pushed in the last block barely moves an average.`,
   },
   {
     t: "end of epoch e+1",
@@ -28,14 +30,14 @@ const EPOCH = [
     p: `Brier skill against the committed baseline. The top ${RULES.paidTopPercent}% with a positive score and at least ${RULES.minResolvedCalls} resolved calls get paid.`,
   },
   {
-    t: "same block",
+    t: "after scoring",
     h: "Root",
-    p: `A Merkle root of the payouts goes to the rewards distributor. One epoch can spend at most ${RULES.maxEpochBudgetPercent}% of its free balance.`,
+    p: `A Merkle root of the payouts goes to the rewards distributor. One epoch can spend at most ${RULES.maxEpochBudgetPercent}% of the pool's free balance (today's cap; it moves only through the timelock).`,
   },
   {
     t: `root + ${RULES.claimDelayHours}h`,
     h: "Claim",
-    p: `A guardian can veto a bad root for ${RULES.claimDelayHours} hours. After that, winners claim their ${T}.`,
+    p: `A guardian can veto a bad root for ${RULES.claimDelayHours} hours. After that, winners claim their ${T} within ${RULES.claimWindowDays} days; what isn't claimed goes back to the pool.`,
   },
 ];
 
@@ -66,6 +68,8 @@ const CANDLES: Array<[number, number, number, number, number]> = [
 // Coins around the mascot, in mascot pixels from its top-left corner.
 const COINS: Array<[number, number]> = [[-9, 4], [-4, 11], [43, 2], [47, 12], [-7, 27], [45, 30]];
 
+const REWARDS_SHARE = (FEE_SPLIT.find((f) => f.key === "rewards")!.bps + FEE_SPLIT.find((f) => f.key === "burn")!.bps) / 100;
+
 export default function Home() {
   return (
     <>
@@ -79,6 +83,10 @@ export default function Home() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="brand__pfp" src="/pfp-laser.png" alt="" width={40} height={40} />
             <span>jev said it</span>
+          </a>
+          {/* Before the section links in the DOM: on a phone it sits next to the brand, and the tab order follows the eye. */}
+          <a className="btn nav__follow" href={LINKS.x} rel="noopener" target="_blank">
+            Follow on X
           </a>
           <nav aria-label="Sections">
             <ul className="nav__links">
@@ -102,9 +110,6 @@ export default function Home() {
               </li>
             </ul>
           </nav>
-          <a className="btn" href={LINKS.x} rel="noopener" target="_blank">
-            Follow on X
-          </a>
         </div>
       </header>
 
@@ -124,7 +129,8 @@ export default function Home() {
               <p className="hero__where">
                 <span className="plate">{T}</span> on {CHAIN.name}. New questions every {LEDGER.epochHours} hours.
               </p>
-              <h1 className="hero__title">
+              {/* The three lines are stacked blocks with no whitespace between them: the accessible name is spelled out. */}
+              <h1 className="hero__title" aria-label="Jev said it.">
                 Jev
                 <span className="said">said</span>
                 <span className="it">it.</span>
@@ -144,25 +150,24 @@ export default function Home() {
               </div>
 
               {TOKEN_ADDRESS ? (
-                <div className="status">
+                <p className="status">
                   <span className="dot dot--live" aria-hidden />
                   <span>
                     <strong>Contract</strong>{" "}
                     <a className="addr" href={`${LINKS.explorer}/token/${TOKEN_ADDRESS}`} rel="noopener" target="_blank">
                       {TOKEN_ADDRESS}
                     </a>
-                    <br />
-                    This address and the one on @jevsaidit are the only ones.
+                    {" "}— this address and the one on @jevsaidit are the only ones.
                   </span>
-                </div>
+                </p>
               ) : (
-                <div className="status">
+                <p className="status">
                   <span className="dot" aria-hidden />
                   <span>
                     <strong>Not launched.</strong> The contract address goes up here and on @jevsaidit
                     before launch. An address you see anywhere else first isn&apos;t ours.
                   </span>
-                </div>
+                </p>
               )}
             </div>
 
@@ -201,15 +206,17 @@ export default function Home() {
                 the receipt and watch the hash stop matching.
               </p>
               <p className="muted">Check any live question yourself, no trust in us needed:</p>
-              <code className="cmd" tabIndex={0} aria-label="Command to verify a question's commitment">{`curl -s \\
+              <div className="cmd" role="region" tabIndex={0} aria-label="Command to verify a question's commitment">
+                <code>{`curl -s \\
   ${SITE_URL}/api/feed/q/<id>.json \\
   | tr -d '\\n' | cast keccak`}</code>
+              </div>
             </div>
             <Receipt />
           </div>
         </section>
 
-        <section className="section" id="epoch" aria-labelledby="epoch-h">
+        <section className="section section--rule" id="epoch" aria-labelledby="epoch-h">
           <div className="wrap">
             <p className="eyebrow">Question · call · settle · score · pay</p>
             <h2 className="h2" id="epoch-h">
@@ -239,8 +246,8 @@ export default function Home() {
               <div role="listitem">
                 <span className="tag tone-gold">VOID</span>
                 <p>
-                  <strong>No swap in the window.</strong> Out of the scores, and listed as void in the
-                  feed.
+                  <strong>No swap between close and settle.</strong> Out of the scores, and listed as void in
+                  the feed.
                 </p>
               </div>
               <div role="listitem">
@@ -265,7 +272,7 @@ export default function Home() {
                 Each call becomes a forecast: agreeing takes the model&apos;s probability, disagreeing
                 takes the opposite. It&apos;s scored against the baseline written into the receipt.
               </p>
-              <div className="formula" aria-label="Scoring formula">{`f     = agree ? p : 1 − p
+              <div className="formula" role="region" tabIndex={0} aria-label="Scoring formula">{`f     = agree ? p : 1 − p
 brier = (f − y)²
 skill = (b − y)² − brier`}</div>
               <p className="muted">
@@ -311,9 +318,8 @@ skill = (b − y)² − brier`}</div>
               </p>
               <p>
                 Winners are paid in {T}, never in ETH. Once per epoch, at a time derived from a secret
-                so it is hard to front-run, {(FEE_SPLIT.find((f) => f.key === "rewards")!.bps + FEE_SPLIT.find((f) => f.key === "burn")!.bps) / 100}% of the fees
-                buy {T} on the open market. No wallet sits in between: the router buys and the
-                distributor holds.
+                so it is hard to front-run, {REWARDS_SHARE}% of the fees buy {T} on the open market. No
+                wallet sits in between: the router buys and the distributor holds.
               </p>
               <p>
                 Your calls are counted from the {T} you hold, so a prize is also next epoch&apos;s
@@ -323,10 +329,30 @@ skill = (b − y)² − brier`}</div>
                 The buy is only as big as the volume. Quiet weeks mean small buys and small prizes.
                 Nothing here promises a price.
               </p>
-              <p className="muted">
-                No transfer tax. Splits change only through a 24-hour timelock, and each change is an
-                on-chain event.
-              </p>
+              {/* The timelock is a deployment fact, not a line of the contract: stated as design before launch,
+                  as an address once the owner is public. Nothing is invented in between. */}
+              {TOKEN_ADDRESS && TIMELOCK_ADDRESS ? (
+                <p className="muted">
+                  No transfer tax. The router and the distributor are owned by a {RULES.timelockHours}-hour timelock at{" "}
+                  <a className="addr" href={`${LINKS.explorer}/address/${TIMELOCK_ADDRESS}`} rel="noopener" target="_blank">
+                    {TIMELOCK_ADDRESS}
+                  </a>
+                  : the splits and the {RULES.maxEpochBudgetPercent}% per-epoch cap change only through it, and each change is an
+                  on-chain event.
+                </p>
+              ) : TOKEN_ADDRESS ? (
+                <p className="muted">
+                  No transfer tax. The splits and the {RULES.maxEpochBudgetPercent}% per-epoch cap change only through the owner of
+                  the router and the distributor, a {RULES.timelockHours}-hour timelock by design: check <code>owner()</code> on
+                  the explorer before trusting this line. Each change is an on-chain event.
+                </p>
+              ) : (
+                <p className="muted">
+                  No transfer tax. By design, the owner of the router and the distributor is a {RULES.timelockHours}-hour
+                  timelock: the splits and the {RULES.maxEpochBudgetPercent}% per-epoch cap change only through it, and each change
+                  is an on-chain event. The timelock&apos;s address is printed here at launch.
+                </p>
+              )}
             </div>
             <div>
               <div
@@ -352,10 +378,10 @@ skill = (b − y)² − brier`}</div>
           </div>
         </section>
 
-        <section className="section section--felt" id="feed" aria-labelledby="feed-h">
+        <section className="section section--felt section--panel" id="feed" aria-labelledby="feed-h">
           <div className="wrap">
             <p className="eyebrow">This epoch</p>
-            <h2 className="h2" id="feed-h">
+            <h2 className="h2 h2--quiet" id="feed-h">
               Live questions.
             </h2>
             <p className="lede muted">
@@ -366,11 +392,11 @@ skill = (b − y)² − brier`}</div>
           </div>
         </section>
 
-        <section className="section" id="play" aria-labelledby="play-h">
+        <section className="section section--panel" id="play" aria-labelledby="play-h">
           <div className="wrap split">
             <div className="prose">
               <p className="eyebrow">Play</p>
-              <h2 className="h2" id="play-h">
+              <h2 className="h2 h2--quiet" id="play-h">
                 Agree or disagree with Jev.
               </h2>
               <p>
@@ -390,7 +416,7 @@ skill = (b − y)² − brier`}</div>
         <section className="section" aria-labelledby="wont-h">
           <div className="wrap">
             <p className="eyebrow">Commitments</p>
-            <h2 className="h2" id="wont-h">
+            <h2 className="h2 h2--quiet" id="wont-h">
               Things this project won&apos;t do.
             </h2>
             <ul className="nots">
@@ -403,41 +429,44 @@ skill = (b − y)² − brier`}</div>
       </main>
 
       <footer className="footer">
-        <div className="wrap footer__row">
-          <div>
-            <p>
-              Not affiliated with TypeSafe AI. &ldquo;Jev&rdquo; is TypeSafe&apos;s model; this project
-              uses it as a component.
-            </p>
-            <p>
-              Calls don&apos;t stake tokens and users never bet against each other. Nothing here is
-              investment advice.
-            </p>
-          </div>
-          <ul>
-            <li>
-              <a href={LINKS.x} rel="noopener" target="_blank">
-                X @jevsaidit
-              </a>
-            </li>
-            <li>
-              <a href={LINKS.xBot} rel="noopener" target="_blank">
-                Bot @jevsaidit_bot
-              </a>
-            </li>
-            {LINKS.telegram && (
+        <div className="wrap">
+          <Addresses token={TOKEN_ADDRESS} chainName={CHAIN.name} chainId={CHAIN.id} explorer={LINKS.explorer} />
+          <div className="footer__row">
+            <div>
+              <p>
+                Not affiliated with TypeSafe AI. &ldquo;Jev&rdquo; is TypeSafe&apos;s model; this project
+                uses it as a component.
+              </p>
+              <p>
+                Calls don&apos;t stake tokens and users never bet against each other. Nothing here is
+                investment advice.
+              </p>
+            </div>
+            <ul>
               <li>
-                <a href={LINKS.telegram} rel="noopener" target="_blank">
-                  Telegram
+                <a href={LINKS.x} rel="noopener" target="_blank">
+                  X @jevsaidit
                 </a>
               </li>
-            )}
-            <li>
-              <a href={LINKS.github} rel="noopener" target="_blank">
-                GitHub
-              </a>
-            </li>
-          </ul>
+              <li>
+                <a href={LINKS.xBot} rel="noopener" target="_blank">
+                  Bot @jevsaidit_bot
+                </a>
+              </li>
+              {LINKS.telegram && (
+                <li>
+                  <a href={LINKS.telegram} rel="noopener" target="_blank">
+                    Telegram
+                  </a>
+                </li>
+              )}
+              <li>
+                <a href={LINKS.github} rel="noopener" target="_blank">
+                  GitHub
+                </a>
+              </li>
+            </ul>
+          </div>
         </div>
       </footer>
     </>

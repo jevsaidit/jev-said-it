@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { PublicClient } from "viem";
+import type pg from "pg";
 import { makeClient } from "../chain/client.js";
 import { type Config, type LedgerConfig, type RewardsConfig } from "../config.js";
 import type { Db } from "../db/db.js";
@@ -8,7 +9,7 @@ import { EPOCH_LENGTH, epochOf } from "../questions/epoch.js";
 import type { VerdictModel } from "../questions/model.js";
 import { LEDGER_ABI, openBatch } from "../questions/open.js";
 import { resolveDue } from "../resolve/resolve.js";
-import { closeEpoch, epochStartBlock } from "../score/epoch.js";
+import { closeEpoch, DISTRIBUTOR_ABI, epochStartBlock } from "../score/epoch.js";
 import { calibration, claimFor, epochView, holderView, leaderboard, questionJson, treasuryOps } from "./feed.js";
 import { getCursor } from "../db/db.js";
 import { transferCursor } from "../indexer/transfers.js";
@@ -36,7 +37,16 @@ export interface ServiceDeps {
   maxLagBlocks: bigint;
 }
 
+/** Swaps older than this many blocks behind the newest indexed one are dropped: ~7 days at 0.105s. */
+const PRUNE_KEEP_BLOCKS = BigInt(process.env.PRUNE_KEEP_BLOCKS ?? 5_800_000);
+
 const jsonOut = (v: unknown) => JSON.stringify(v, (_, x) => (typeof x === "bigint" ? x.toString() : x));
+
+/** One writer at a time. Railway keeps the old container alive until the new one is healthy, so for
+ *  a minute every deploy runs two engines on the same database and the same keeper key: two batches
+ *  in one epoch, or a nonce clash. The lock lives on one dedicated Postgres session (advisory locks
+ *  are per session, and a pool hands out any); the loser keeps indexing and serving, sends nothing. */
+const WRITER_LOCK_KEY = 0x4a45_5653; // "JEVS"
 
 export async function serve(d: ServiceDeps): Promise<void> {
   const ledger = d.lcfg ? makeClient(d.lcfg.ledgerRpcUrl) : null;
@@ -44,6 +54,23 @@ export async function serve(d: ServiceDeps): Promise<void> {
   let lastSeenAt = 0; // last index cycle in which the engine LOOKED at the chain (OK or IDLE)
   let lag: bigint | null = null; // blocks between the most-behind index and the head
   const startedAt = Date.now();
+  let lockClient: pg.PoolClient | null = null;
+  let writer = false;
+  const takeWriterLock = async (): Promise<boolean> => {
+    if (writer) return true;
+    try {
+      lockClient ??= await d.db.connect();
+      const r = await lockClient.query<{ got: boolean }>("SELECT pg_try_advisory_lock($1) got", [WRITER_LOCK_KEY]);
+      writer = r.rows[0]?.got === true;
+    } catch (e) {
+      // The session that held the lock may be gone with the connection: start again from a new one.
+      lockClient?.release(true);
+      lockClient = null;
+      writer = false;
+      mark("writer", "BLIND", (e as Error).message.split("\n")[0]);
+    }
+    return writer;
+  };
   const mark = (name: string, state: string, detail?: unknown) => {
     // A task is logged only when its state CHANGES: a cycle every 15s with five identical lines
     // drowns the one line that matters. /health exposes the current state anyway.
@@ -69,19 +96,33 @@ export async function serve(d: ServiceDeps): Promise<void> {
         if (out.state !== "BLIND") {
           lastSeenAt = Date.now();
           lag = out.lag;
-        }
+        } else lag = null; // a lag measured before going blind is not a lag: nobody knows where the head is now
         return { state: out.state, detail: out };
       });
+      // Old swaps are never read again: candidates look back 48h, resolution 6h + the window.
+      // Without this the table grew by ~2.6 rows per block for the life of the database.
+      await task("prune", async () => {
+        const r = await d.db.query("DELETE FROM swaps WHERE block < (SELECT COALESCE(MAX(block), 0) - $1 FROM swaps)", [PRUNE_KEEP_BLOCKS.toString()]);
+        return { state: r.rowCount ? "OK" : "IDLE", detail: r.rowCount ? { deleted: r.rowCount } : undefined };
+      });
+      const isWriter = await takeWriterLock();
+      if (!isWriter) {
+        mark("writer", "STANDBY", "another engine holds the writer lock: indexing and serving only");
+        await new Promise((r) => setTimeout(r, d.pollMs));
+        continue;
+      }
+      mark("writer", "OK");
       if (!d.lcfg || !ledger) mark("questions", "DISABLED", "CALL_LEDGER not configured");
       else if (!d.model) mark("questions", "DISABLED", "no model configured: no questions are opened");
-      else if (lag === null || lag > d.maxLagBlocks)
-        // With the index behind, candidates would be chosen on stale swaps: wait.
-        mark("questions", "WAITING", `index ${lag ?? "?"} blocks behind (maximum ${d.maxLagBlocks})`);
       else {
         const lcfg = d.lcfg;
         const model = d.model;
+        // With the index behind, candidates would be chosen on stale swaps: nothing new is opened,
+        // but a batch already sent is still settled from its receipt (or it stays PENDING for hours).
+        const behind = lag === null || lag > d.maxLagBlocks;
         await task("questions", async () => {
-          const out = await openBatch({ db: d.db, ledger, cfg: lcfg, model, dataChainId: await d.data.getChainId(), excludeTokens: [d.cfg.token], data: d.data });
+          const out = await openBatch({ db: d.db, ledger, cfg: lcfg, model, dataChainId: await d.data.getChainId(), excludeTokens: [d.cfg.token], data: d.data, reconcileOnly: behind });
+          if (behind && out.state === "SKIPPED") return { state: "WAITING", detail: `index ${lag ?? "?"} blocks behind (maximum ${d.maxLagBlocks})` };
           return { state: out.state, detail: out.state === "OPENED" ? { epoch: out.epoch, n: out.ids.length, tx: out.tx } : out.reason };
         });
       }
@@ -107,7 +148,15 @@ export async function serve(d: ServiceDeps): Promise<void> {
           const genesis = Number(await ledger.readContract({ address: lcfg.callLedger, abi: LEDGER_ABI, functionName: "genesis" }));
           const now = Number((await ledger.getBlock({ blockTag: "latest" })).timestamp);
           const current = epochOf(now, genesis);
-          const done = await d.db.query<{ epoch: number }>("SELECT epoch FROM epochs WHERE state IN ('PUBLISHED','NOT_PAYABLE')");
+          // A guardian void is an on-chain fact the table must learn: a voided epoch's claims are
+          // not served (/claim, /holder) and not announced. Checked while the void window is open,
+          // plus a margin (the void can land at the last second and this loop runs every 15s).
+          const recent = await d.db.query<{ epoch: number }>("SELECT epoch FROM epochs WHERE state = 'PUBLISHED' AND published_at > now() - interval '13 hours'");
+          for (const r of recent.rows) {
+            const voided = await ledger.readContract({ address: rcfg.rewardsDistributor, abi: DISTRIBUTOR_ABI, functionName: "epochVoided", args: [BigInt(r.epoch)] });
+            if (voided) await d.db.query("UPDATE epochs SET state = 'VOIDED', reason = 'voided by the guardian on-chain' WHERE epoch = $1 AND state = 'PUBLISHED'", [r.epoch]);
+          }
+          const done = await d.db.query<{ epoch: number }>("SELECT epoch FROM epochs WHERE state IN ('PUBLISHED','NOT_PAYABLE','VOIDED')");
           const closed = new Set(done.rows.map((r) => r.epoch));
           for (let e = 0; e < current; e++) {
             if (closed.has(e)) continue;
@@ -193,8 +242,15 @@ export async function serve(d: ServiceDeps): Promise<void> {
     }
     if (path === "/epochs/current") {
       if (!d.lcfg || !ledger) return send(res, 404, jsonOut({ error: "CallLedger not configured" }));
-      const { genesis } = await ledgerMeta();
-      const now = await chainNow();
+      // A chain read that fails is "could not look", not "nothing": 502, which the site shows as blind.
+      let genesis: number;
+      let now: number;
+      try {
+        genesis = (await ledgerMeta()).genesis;
+        now = await chainNow();
+      } catch (e) {
+        return send(res, 502, jsonOut({ state: "blind", error: (e as Error).message.split("\n")[0] }));
+      }
       const e = epochOf(now, genesis);
       return send(res, 200, jsonOut({ ...(await epochView(d.db, e, now)), genesis, now }));
     }

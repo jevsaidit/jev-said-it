@@ -18,6 +18,20 @@ vi.mock("../src/chain/client.js", () => ({
   }),
 }));
 
+// The two-halves sender of 22/09: the hash is handed to the caller before the "broadcast".
+vi.mock("../src/chain/send.js", async () => {
+  const real = await vi.importActual<typeof import("../src/chain/send.js")>("../src/chain/send.js");
+  return {
+    ...real,
+    sendTx: async (_d: unknown, req: { functionName: string; args?: unknown[] }, onHash: (h: string) => Promise<void>) => {
+      sent.push({ functionName: req.functionName, args: req.args });
+      const hash = `0x${sent.length.toString(16).padStart(64, "0")}`;
+      await onHash(hash);
+      return hash;
+    },
+  };
+});
+
 import { openBatch } from "../src/questions/open.js";
 import { questionJson } from "../src/server/feed.js";
 
@@ -56,6 +70,7 @@ describe("openBatch: a batch whose receipt was lost is settled from the chain, n
     [/SELECT p\.pool_id, p\.token, count/, () => ok([{ pool_id: "0x" + "11".repeat(32), token: A, n: "42" }])],
     [/SELECT sqrt_price_x96 s FROM swaps/, () => ok([{ s: "1000" }])],
     [/SELECT p\.start_block/, () => ok([{ start_block: "100", n1: "10", n6: "50" }])],
+    [/SELECT id, status FROM questions WHERE id = ANY/, ([ids]) => ok(rows.filter((r) => (ids as string[]).includes(r.id)).map((r) => ({ id: r.id, status: r.status })))],
     [/INSERT INTO questions/, ([id, , deadline, , , , , json]) => { rows.push({ id: id as string, status: "PENDING", deadline: deadline as number, json: json as string }); return ok(); }],
     [/UPDATE questions SET status = 'FAILED'/, ([ids]) => { for (const r of rows) if ((ids as string[]).includes(r.id)) r.status = "FAILED"; return ok(); }],
     [/UPDATE questions SET status = 'OPEN'/, ([ids]) => { for (const r of rows) if ((ids as string[]).includes(r.id)) r.status = "OPEN"; return ok(); }],

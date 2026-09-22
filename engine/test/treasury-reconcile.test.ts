@@ -23,6 +23,20 @@ vi.mock("../src/chain/client.js", () => ({
   }),
 }));
 
+// The two-halves sender of 22/09: the hash is handed to the caller before the "broadcast".
+vi.mock("../src/chain/send.js", async () => {
+  const real = await vi.importActual<typeof import("../src/chain/send.js")>("../src/chain/send.js");
+  return {
+    ...real,
+    sendTx: async (_d: unknown, req: { functionName: string }, onHash: (h: string) => Promise<void>) => {
+      sent.push(req.functionName);
+      const hash = `0x${sent.length.toString(16).padStart(64, "0")}`;
+      await onHash(hash);
+      return hash;
+    },
+  };
+});
+
 import { runTreasury } from "../src/treasury/treasury.js";
 import { swapTime } from "../src/treasury/schedule.js";
 

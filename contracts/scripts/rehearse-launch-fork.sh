@@ -31,7 +31,9 @@ ok=0; ko=0
 check() { if [ "$(lc "$1")" = "$(lc "$2")" ] && [ -n "$1" ]; then echo "  ✓ $3"; ok=$((ok+1)); else echo "  ✗ $3 — expected '$2', got '$1'"; ko=$((ko+1)); fi; }
 st() { cast send "$@" --rpc-url $A --json 2>/dev/null | jq -r .status; }
 fund() { cast rpc anvil_setBalance $1 0x56BC75E2D63100000 --rpc-url $A >/dev/null; }   # 100 ETH
-rv() { local r; r=$(st "$@"); [ "$r" = "0x1" ] && echo "went through" || echo reverted; }
+# Three states, not two: a dead RPC or a cast argument error gives an empty status, and reading that as
+# "reverted" would let a negative assertion pass on a tool failure.
+rv() { local r; r=$(st "$@"); case "$r" in 0x1) echo "went through";; 0x0) echo reverted;; *) echo "not measured";; esac; }
 warp() { cast rpc evm_increaseTime $1 --rpc-url $A >/dev/null; cast rpc evm_mine --rpc-url $A >/dev/null; }
 
 DEPLOYER_PK=$(cast wallet new --json | jq -r '(.data // .) | if type=="array" then .[0] else . end | .private_key'); DEPLOYER=$(ad $DEPLOYER_PK)

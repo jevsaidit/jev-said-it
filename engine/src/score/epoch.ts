@@ -3,6 +3,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { blockAtOrBefore } from "../chain/blocktime.js";
 import { lookupTx } from "../chain/tx.js";
 import { makeWallet } from "../chain/client.js";
+import { NotSentError, sendTx } from "../chain/send.js";
 import type { Config, LedgerConfig, RewardsConfig } from "../config.js";
 import { balanceAt, type Db, getCursor } from "../db/db.js";
 import { indexCalls } from "../indexer/calls.js";
@@ -19,6 +20,7 @@ export const DISTRIBUTOR_ABI = parseAbi([
   "function lastRootSetAt() view returns (uint256)",
   "function hasPublished() view returns (bool)",
   "function roots(uint256) view returns (bytes32)",
+  "function epochVoided(uint256) view returns (bool)",
   "function scorer() view returns (address)",
   "function setEpochRoot(uint256 epoch, bytes32 root, uint256 budget)",
   "event EpochRootSet(uint256 indexed epoch, bytes32 root, uint256 budget)",
@@ -42,14 +44,39 @@ export interface EpochDeps {
   rcfg: RewardsConfig;
 }
 
+/** A root computed earlier for the same epoch, kept when a later pass recomputes it. */
+type Previous = { root: string; budget: string; claims: unknown; tx_hash: string | null };
+
 async function store(db: Db, epoch: number, state: string, reason: string | null, root: string | null, budget: bigint | null, payload: unknown) {
+  // A recompute (after a root transaction went unknown for 10 minutes) may produce a different root
+  // as soon as freeBalance moved. The old root's claims are kept inside the payload: if the old
+  // transaction lands after all, the proofs served must be the ones that match it (review of 22/09).
+  const prev = await db.query<{ state: string; root: string | null; budget: string | null; payload: string; tx_hash: string | null }>(
+    "SELECT state, root, budget, payload, tx_hash FROM epochs WHERE epoch = $1",
+    [epoch],
+  );
+  const old = prev.rows[0];
+  let body = payload as Record<string, unknown>;
+  if (old && old.root && root && old.root.toLowerCase() !== root.toLowerCase()) {
+    const oldPayload = JSON.parse(old.payload) as { claims?: unknown; previous?: Previous[] };
+    const previous: Previous[] = [...(oldPayload.previous ?? []), { root: old.root, budget: old.budget ?? "0", claims: oldPayload.claims ?? [], tx_hash: old.tx_hash }];
+    body = { ...body, previous };
+  } else if (old) {
+    const oldPayload = JSON.parse(old.payload) as { previous?: Previous[] };
+    if (oldPayload.previous) body = { ...body, previous: oldPayload.previous };
+  }
   await db.query(
-    `INSERT INTO epochs (epoch, state, reason, root, budget, payload) VALUES ($1,$2,$3,$4,$5,$6)
+    `INSERT INTO epochs (epoch, state, reason, root, budget, payload, closed_at) VALUES ($1,$2,$3,$4,$5,$6,now())
      ON CONFLICT (epoch) DO UPDATE SET state = EXCLUDED.state, reason = EXCLUDED.reason, root = EXCLUDED.root,
-       budget = EXCLUDED.budget, payload = EXCLUDED.payload WHERE epochs.state <> 'PUBLISHED'`,
-    [epoch, state, reason, root, budget?.toString() ?? null, json(payload)],
+       budget = EXCLUDED.budget, payload = EXCLUDED.payload, closed_at = now() WHERE epochs.state NOT IN ('PUBLISHED','VOIDED')`,
+    [epoch, state, reason, root, budget?.toString() ?? null, json(body)],
   );
 }
+
+/** How long an empty distributor is waited for before an epoch is declared not payable. The first
+ *  epochs end before Pons has swept a single fee: declaring them on the first look would make the
+ *  first buyback pay nobody for the epochs it was meant for. */
+export const EMPTY_DISTRIBUTOR_GRACE_SEC = 2 * EPOCH_LENGTH;
 
 /**
  * The block whose end state is "the balance at the start of the epoch": the last block with a
@@ -72,6 +99,7 @@ export async function closeEpoch(d: EpochDeps, epoch: number, publish: boolean):
   );
   const row = already.rows[0];
   if (row?.state === "PUBLISHED") return { state: "WAIT", reason: `epoch ${epoch} already published` };
+  if (row?.state === "VOIDED") return { state: "WAIT", reason: `epoch ${epoch} was voided by the guardian` };
 
   // The chain is the truth about a root, not our table. A root sent in an earlier pass may have
   // landed while its receipt was lost (timeout, RPC error, restart): recognise it instead of
@@ -82,6 +110,17 @@ export async function closeEpoch(d: EpochDeps, epoch: number, publish: boolean):
     if (row?.root?.toLowerCase() === onchain.toLowerCase()) {
       await db.query("UPDATE epochs SET state = 'PUBLISHED', published_at = now() WHERE epoch = $1", [epoch]);
       return { state: "PUBLISHED", root: onchain, budget: BigInt(row.budget ?? 0), tx: (row.tx_hash ?? zeroHash) as Hex };
+    }
+    // An earlier root of ours that was recomputed, and whose transaction landed after all: restore
+    // its claims, they are the proofs that match what is on-chain.
+    const payload = row ? (JSON.parse((await db.query<{ payload: string }>("SELECT payload FROM epochs WHERE epoch = $1", [epoch])).rows[0]!.payload) as { previous?: Previous[] }) : null;
+    const older = payload?.previous?.find((p) => p.root.toLowerCase() === onchain.toLowerCase());
+    if (older && payload) {
+      const restored = { ...payload, root: older.root, budget: older.budget, claims: older.claims, previous: payload.previous!.filter((p) => p !== older) };
+      await db.query("UPDATE epochs SET state = 'PUBLISHED', root = $2, budget = $3, tx_hash = COALESCE($4, tx_hash), payload = $5, published_at = now() WHERE epoch = $1", [
+        epoch, older.root, older.budget, older.tx_hash, json(restored),
+      ]);
+      return { state: "PUBLISHED", root: onchain, budget: BigInt(older.budget), tx: (older.tx_hash ?? zeroHash) as Hex };
     }
     return { state: "FAILED", reason: `epoch ${epoch} has root ${onchain} on-chain, not the one stored (${row?.root ?? "none"}): check by hand` };
   }
@@ -146,7 +185,11 @@ export async function closeEpoch(d: EpochDeps, epoch: number, publish: boolean):
   const cap = (free * bps) / 10_000n;
   const budget = rcfg.epochBudget !== null && rcfg.epochBudget < cap ? rcfg.epochBudget : cap;
   if (budget === 0n) {
-    // Before the first processSwap the distributor is empty: scores stay public, rewards do not.
+    // Before the first processSwap the distributor is empty. Not declared on the first look: the
+    // epoch waits for the buyback for a while, and only then scores stay public and rewards do not.
+    if (now < epochEnd(epoch, genesis) + EMPTY_DISTRIBUTOR_GRACE_SEC) {
+      return { state: "WAIT", reason: `distributor has no free balance: waiting for the first buyback until ${epochEnd(epoch, genesis) + EMPTY_DISTRIBUTOR_GRACE_SEC}` };
+    }
     await store(db, epoch, "NOT_PAYABLE", "distributor has no free balance", null, null, base);
     return { state: "NOT_PAYABLE", reason: "distributor has no free balance" };
   }
@@ -172,19 +215,18 @@ export async function closeEpoch(d: EpochDeps, epoch: number, publish: boolean):
   const wallet = makeWallet(lcfg.ledgerRpcUrl, await ledger.getChainId(), rcfg.scorerPk);
   let tx: Hex;
   try {
-    tx = await wallet.writeContract({
-      account: scorer,
-      chain: wallet.chain,
-      address: rcfg.rewardsDistributor,
-      abi: DISTRIBUTOR_ABI,
-      functionName: "setEpochRoot",
-      args: [BigInt(epoch), root, total],
-    });
+    // Hash stored BEFORE the broadcast: if the receipt never comes back, the next pass finds the root on-chain.
+    tx = await sendTx(
+      { pub: ledger, wallet, account: scorer },
+      { address: rcfg.rewardsDistributor, abi: DISTRIBUTOR_ABI, functionName: "setEpochRoot", args: [BigInt(epoch), root, total] },
+      async (hash) => {
+        await db.query("UPDATE epochs SET tx_hash = $2, sent_at = now() WHERE epoch = $1 AND state = 'PAYABLE'", [epoch, hash]);
+      },
+    );
   } catch (e) {
-    return { state: "FAILED", reason: `setEpochRoot failed: ${(e as Error).message.split("\n")[0]}` };
+    if (e instanceof NotSentError) return { state: "FAILED", reason: `setEpochRoot not sent: ${e.message}` };
+    return { state: "WAIT", reason: `setEpochRoot broadcast, outcome unknown (${(e as Error).message}): checked on-chain next pass` };
   }
-  // Stored before waiting: if the receipt never comes back, the next pass finds the root on-chain.
-  await db.query("UPDATE epochs SET tx_hash = $2, sent_at = now() WHERE epoch = $1 AND state = 'PAYABLE'", [epoch, tx]);
   const receipt = await ledger.waitForTransactionReceipt({ hash: tx }).catch(() => null);
   if (!receipt) return { state: "WAIT", reason: `setEpochRoot ${tx} sent, receipt not read yet` };
   const ev = receipt.logs

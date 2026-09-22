@@ -127,6 +127,34 @@ contract CallLedgerTest is Test {
         ledger.openQuestions(0, ids, uint64(block.timestamp));
     }
 
+    /// A publisher key cannot reopen a closed question with a later deadline (part of the outcome is
+    /// visible by then), open a batch for another epoch, or close it after the epoch's end.
+    function test_openQuestions_refuses_reopen_wrong_epoch_and_late_deadline() public {
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = q1;
+        _open(ids);
+        uint256 epoch = ledger.currentEpoch();
+        vm.warp(block.timestamp + 2 hours); // past the 1h deadline
+        vm.prank(publisher);
+        vm.expectRevert(CallLedger.AlreadyOpen.selector);
+        ledger.openQuestions(epoch, ids, uint64(block.timestamp + 1 hours));
+
+        bytes32[] memory other = new bytes32[](1);
+        other[0] = q2;
+        vm.prank(publisher);
+        vm.expectRevert(CallLedger.WrongEpoch.selector);
+        ledger.openQuestions(epoch + 1, other, uint64(block.timestamp + 1 hours));
+
+        uint64 epochEnd = uint64(ledger.genesis() + (epoch + 1) * ledger.EPOCH_LENGTH());
+        vm.prank(publisher);
+        vm.expectRevert(CallLedger.DeadlinePastEpoch.selector);
+        ledger.openQuestions(epoch, other, epochEnd + 1);
+        // exactly at the end of the epoch is still inside it
+        vm.prank(publisher);
+        ledger.openQuestions(epoch, other, epochEnd);
+        assertEq(ledger.questionDeadline(epoch, q2), epochEnd);
+    }
+
     function test_setPublisher_only_owner_and_switches_publisher() public {
         address newPublisher = address(0xCAFE);
 

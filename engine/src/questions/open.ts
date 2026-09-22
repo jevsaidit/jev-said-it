@@ -1,6 +1,7 @@
 import { decodeEventLog, parseAbi, type Hex, type PublicClient, type TransactionReceipt } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { makeWallet } from "../chain/client.js";
+import { NotSentError, sendTx } from "../chain/send.js";
 import { lookupTx } from "../chain/tx.js";
 import type { LedgerConfig } from "../config.js";
 import { type Db, getCursor, inTx } from "../db/db.js";
@@ -43,20 +44,32 @@ export interface OpenDeps {
   excludeTokens: string[];
   /** data-chain client, to read the tokens' symbol() (for the site only) */
   data?: PublicClient;
+  /** settle batches already sent, open nothing new (the index is behind: candidates would be stale) */
+  reconcileOnly?: boolean;
 }
 
 const ERC20_SYMBOL = parseAbi(["function symbol() view returns (string)"]);
 
-/** The ticker, if the token exposes one. A token without symbol() or with an odd symbol() blocks nothing. */
+/** What a ticker may look like on the site and in a post. symbol() is chosen by whoever launched the
+ *  token: a URL, an @handle or a sentence in there would be printed verbatim by the announcer. */
+export const SYMBOL_RE = /^[A-Za-z0-9_.-]{1,12}$/;
+
+/** The ticker, if the token exposes a plain one. A token without symbol() or with an odd symbol() blocks nothing. */
 async function symbolOf(data: PublicClient | undefined, token: string): Promise<string | null> {
   if (!data) return null;
   try {
     const s = await data.readContract({ address: token as `0x${string}`, abi: ERC20_SYMBOL, functionName: "symbol" });
-    return typeof s === "string" && s.length <= 32 ? s : null;
+    return typeof s === "string" && SYMBOL_RE.test(s) ? s : null;
   } catch {
     return null;
   }
 }
+
+/** Ceiling on the time the model loop may take in one pass: past it, the batch goes out with the
+ *  verdicts collected so far. Ten candidates behind a slow Jev (10s timeout x 5 attempts each) used
+ *  to hold the loop for ten minutes, longer than the engine's own blindness limit: it exited 3
+ *  with the chain perfectly healthy. */
+export const MODEL_BUDGET_MS = Number(process.env.MODEL_BUDGET_MS ?? 150_000);
 
 export async function openBatch(d: OpenDeps): Promise<OpenResult> {
   const { db, ledger, cfg, model } = d;
@@ -101,6 +114,7 @@ export async function openBatch(d: OpenDeps): Promise<OpenResult> {
     if (r.state === "OPENED") return r;
   }
 
+  if (d.reconcileOnly) return { state: "SKIPPED", reason: "index behind: pending batches settled, nothing new opened" };
   const plan = planBatch({ now, genesis, ...cfg });
   if (!plan.open) return { state: "SKIPPED", reason: plan.reason };
 
@@ -122,7 +136,12 @@ export async function openBatch(d: OpenDeps): Promise<OpenResult> {
   const ledgerChainId = await ledger.getChainId();
   const rows: Array<{ id: Hex; json: string; token: string; poolId: string; symbol: string | null }> = [];
   const modelErrors: string[] = [];
+  const modelStart = Date.now();
   for (const c of cands) {
+    if (Date.now() - modelStart > MODEL_BUDGET_MS) {
+      modelErrors.push(`model budget of ${MODEL_BUDGET_MS}ms spent: ${rows.length} verdicts kept, the rest skipped`);
+      break;
+    }
     // A verdict that does not arrive removes THAT question from the batch: it is not opened with a made-up p.
     let v: { p: number; model?: string };
     try {
@@ -155,11 +174,20 @@ export async function openBatch(d: OpenDeps): Promise<OpenResult> {
   if (rows.length === 0) return { state: "FAILED", reason: `no verdict from model ${model.id}: ${modelErrors.slice(0, 2).join("; ")}` };
   const ids = rows.map((r) => r.id);
 
+  // Same token, same p, same deadline (clamped to the epoch's end) = same id. A row that already
+  // exists is either live (on-chain, or being sent: never reopened) or FAILED, and a FAILED one is
+  // revived instead of colliding on the primary key every cycle until the epoch ends.
+  const existing = await db.query<{ id: string; status: string }>("SELECT id, status FROM questions WHERE id = ANY($1::text[])", [ids]);
+  const alive = existing.rows.filter((r) => r.status !== "FAILED");
+  if (alive.length) return { state: "SKIPPED", reason: `${alive.length} of the planned ids already exist (${alive[0]!.status}): not reopened` };
   await inTx(db, async (c) => {
     for (const r of rows) {
       await c.query(
         `INSERT INTO questions (id, epoch, deadline, horizon, kind, token, pool_id, json, status, symbol)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'PENDING',$9)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'PENDING',$9)
+         ON CONFLICT (id) DO UPDATE SET status = 'PENDING', tx_hash = NULL, opened_block = NULL, created_at = now(),
+           epoch = EXCLUDED.epoch, deadline = EXCLUDED.deadline, symbol = EXCLUDED.symbol
+         WHERE questions.status = 'FAILED'`,
         [r.id, plan.epoch, plan.deadline, cfg.horizonSec, KIND_A, r.token, r.poolId, r.json, r.symbol],
       );
     }
@@ -176,19 +204,19 @@ export async function openBatch(d: OpenDeps): Promise<OpenResult> {
   const wallet = makeWallet(cfg.ledgerRpcUrl, ledgerChainId, cfg.keeperPk);
   let tx: Hex;
   try {
-    tx = await wallet.writeContract({
-      account: keeper,
-      chain: wallet.chain,
-      address: cfg.callLedger,
-      abi: LEDGER_ABI,
-      functionName: "openQuestions",
-      args: [BigInt(plan.epoch), ids, BigInt(plan.deadline)],
-    });
+    // The hash is stored BEFORE the broadcast: whatever the network answers afterwards, the next
+    // pass settles the batch from the chain. Only a failed simulation means "nothing was sent".
+    tx = await sendTx(
+      { pub: ledger, wallet, account: keeper },
+      { address: cfg.callLedger, abi: LEDGER_ABI, functionName: "openQuestions", args: [BigInt(plan.epoch), ids, BigInt(plan.deadline)] },
+      async (hash) => {
+        await db.query("UPDATE questions SET tx_hash = $2 WHERE id = ANY($1::text[])", [ids, hash]);
+      },
+    );
   } catch (e) {
-    return fail(`send failed: ${(e as Error).message.split("\n")[0]}`);
+    if (e instanceof NotSentError) return fail(`not sent: ${e.message}`);
+    return { state: "SKIPPED", reason: `openQuestions broadcast, outcome unknown (${(e as Error).message}): settled from the chain next pass` };
   }
-  // Stored before waiting: if the receipt never comes back, the next pass settles the batch from it.
-  await db.query("UPDATE questions SET tx_hash = $2 WHERE id = ANY($1::text[])", [ids, tx]);
   const receipt = await ledger.waitForTransactionReceipt({ hash: tx }).catch(() => null);
   if (!receipt) return { state: "SKIPPED", reason: `openQuestions ${tx} sent, receipt not read yet` };
   return settleOpen(db, ledger, cfg, genesis, { epoch: plan.epoch, deadline: plan.deadline, ids, tx }, receipt);

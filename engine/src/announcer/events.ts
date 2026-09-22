@@ -44,13 +44,19 @@ export async function collectEvents(db: Db, now: number): Promise<Array<{ event:
     const s = b.questions.every((r) => r.outcome !== null) ? strikingOutcome(b.questions) : null;
     if (s) out.push({ event: { kind: "outcome", key: `outcome:${s.id}`, question: toQ(s) }, channels: ["x"] });
   }
-  const eps = (await db.query<{ epoch: number; payload: string; published_at: Date | null }>(
-    "SELECT epoch, payload, published_at FROM epochs WHERE state = 'PUBLISHED' AND published_at > now() - interval '2 days' ORDER BY epoch",
+  // Settled epochs: the ones with a root on-chain, and the ones declared not payable (no winner,
+  // too many unresolvable questions, empty distributor). The second kind is news too: "nobody beat
+  // the baseline" is a sentence the voice has, and an epoch that vanishes silently looks hidden.
+  const eps = (await db.query<{ epoch: number; state: string; payload: string; published_at: Date | null; closed_at: Date | null }>(
+    `SELECT epoch, state, payload, published_at, closed_at FROM epochs
+      WHERE (state = 'PUBLISHED' AND published_at > now() - interval '2 days')
+         OR (state = 'NOT_PAYABLE' AND closed_at > now() - interval '2 days')
+      ORDER BY epoch`,
   )).rows;
   for (const e of eps) {
     const p = JSON.parse(e.payload) as { claims?: Array<{ account: string; amount: string }> };
-    const claims = [...(p.claims ?? [])].sort((a, b) => (BigInt(b.amount) > BigInt(a.amount) ? 1 : -1));
-    const claimsAt = e.published_at ? Math.floor(e.published_at.getTime() / 1000) + CLAIM_DELAY_SEC : null;
+    const claims = e.state === "PUBLISHED" ? [...(p.claims ?? [])].sort((a, b) => (BigInt(b.amount) > BigInt(a.amount) ? 1 : -1)) : [];
+    const claimsAt = e.state === "PUBLISHED" && e.published_at ? Math.floor(e.published_at.getTime() / 1000) + CLAIM_DELAY_SEC : null;
     out.push({ event: { kind: "epoch_settled", key: `settled:${e.epoch}`, epoch: e.epoch, winners: claims.length, top: claims[0]?.account ?? null, claimsAt }, channels: ["telegram", "x"] });
     if (claimsAt && now >= claimsAt) out.push({ event: { kind: "claims_open", key: `claims:${e.epoch}`, epoch: e.epoch }, channels: ["telegram"] });
   }

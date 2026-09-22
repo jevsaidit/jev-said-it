@@ -209,8 +209,9 @@ R=https://rpc.mainnet.chain.robinhood.com
 F=0x7eD598BcEf8bd9Edd8C97A195C6d13f40801EC7e
 T=0xca0fae2cf65e5bfb98c6a432bca2048233dbb8b2
 TX=0x96997deb774ddddcf58c7550e0ba56d2dc4378fd85372aa8d2f322680042d185
-# These four values feed the runbook §4.5 gate: `from`/`to` are row 3,
-# indexes 2 and 3 are rows 1 and 2. A value never measured, printed here, reads as a measurement
+# These four values feed the runbook §4.5 gate. Careful with the word "row": in the runbook's
+# table index 2 is row 3 and index 3 is row 4 (rows are numbered from 1, index = row - 1); here the
+# script just prints four lines, index 2, index 3, from, to. A value never measured, printed here, reads as a measurement
 # — and the gate is crossed at T0+30s on an already launched token. Rule: runbook §4.
 W=$(cast call $F 'getLaunchedToken(address)' "$T" --rpc-url $R | sed 's/^0x//' | fold -w64)
 W2=$(echo "$W" | sed -n '3p' | cut -c25-)

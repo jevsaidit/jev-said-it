@@ -345,6 +345,16 @@ contract RewardsDistributorTest is Test {
 
     /// One scorer transaction used to be enough to lock the distributor forever:
     /// setEpochRoot(type(uint256).max, ...) moved lastEpoch out of reach of every later root.
+    /// A root with a zero budget commits nothing and pays nobody, but it still moves lastEpoch: one
+    /// scorer transaction would lock every lower epoch out at no cost.
+    function test_setEpochRoot_refuses_a_zero_budget() public {
+        bytes32 root = m.getRoot(leaves);
+        uint256 current = (block.timestamp - dist.genesis()) / dist.EPOCH_LENGTH();
+        vm.prank(scorer);
+        vm.expectRevert(RewardsDistributor.ZeroBudget.selector);
+        dist.setEpochRoot(current - 1, root, 0);
+    }
+
     function test_setEpochRoot_refuses_epochs_that_have_not_ended() public {
         bytes32 root = m.getRoot(leaves);
         uint256 current = (block.timestamp - dist.genesis()) / dist.EPOCH_LENGTH();

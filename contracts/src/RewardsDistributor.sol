@@ -73,6 +73,7 @@ contract RewardsDistributor is Ownable2Step {
     error AlreadyVoided();
     error EpochNotEnded();
     error ClaimWindowClosed();
+    error ZeroBudget();
 
     /// @dev `guardian_` cannot be zero: after the handover the owner is a 24-hour timelock, and
     ///      an operation scheduled there cannot land inside the CLAIM_DELAY = 12 hour
@@ -106,6 +107,9 @@ contract RewardsDistributor is Ownable2Step {
             if (epoch <= lastEpoch) revert EpochNotIncreasing();
             if (block.timestamp < lastRootSetAt + EPOCH_LENGTH) revert EpochTooSoon();
         }
+        // A root with nothing behind it is not a payout, it is a way to lock every lower epoch out
+        // (strictly increasing) at no cost. The engine never publishes one: no winners = NOT_PAYABLE, no root.
+        if (budget == 0) revert ZeroBudget();
         if (budget > freeBalance() * maxEpochBudgetBps / BPS) revert BudgetTooLarge();
         roots[epoch] = root;
         epochBudget[epoch] = budget;

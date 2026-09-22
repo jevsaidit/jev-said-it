@@ -154,7 +154,7 @@ contract FeeRouter is Ownable2Step, ReentrancyGuard {
         // absorbs it alone, and the rounding remainder goes to rewards as always.
         uint256 burned = out * burnBps / (burnBps + rewardsBps);
         uint256 toRewards = out - burned;
-        token.safeTransfer(DEAD, burned);
+        if (burned > 0) token.safeTransfer(DEAD, burned);
         token.safeTransfer(rewardsDistributor, toRewards);
         emit SwapProcessed(ethIn, out, burned, toRewards);
     }
