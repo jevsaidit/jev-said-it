@@ -4,7 +4,7 @@ import { LiveFeed } from "@/components/LiveFeed";
 import { Play } from "@/components/Play";
 import { Receipt } from "@/components/Receipt";
 import { WalletButton } from "@/components/WalletButton";
-import { CHAIN, FEE_SPLIT, LEDGER, LINKS, RULES, SITE_URL, TICKER, TIMELOCK_ADDRESS, TOKEN_ADDRESS } from "@/lib/site";
+import { CHAIN, DEV, FEE_SPLIT, LEDGER, LINKS, RULES, SITE_URL, TICKER, TIMELOCK_ADDRESS, TOKEN_ADDRESS } from "@/lib/site";
 
 const T = `$${TICKER}`;
 
@@ -54,7 +54,7 @@ const WONT = [
   "Pay for raw volume or airdrop by transaction count",
   "Tax transfers. Fees only happen at the swap",
   "Announce surprise buybacks on X. Buybacks run from the router, on-chain",
-  `Hold ${T}. The team is paid ${FEE_SPLIT.find((f) => f.key === "team")!.bps / 100}% of fees in ETH, so its pay stops when volume does`,
+  `Hide what the team holds. The dev wallet buys ${T} in the launch transaction and keeps it, printed below with its share and never in the rewards; beyond that the team is paid ${FEE_SPLIT.find((f) => f.key === "team")!.bps / 100}% of fees in ETH`,
   "Publish another model's answer as “Jev said it”. Every verdict names the model that gave it",
   "Turn “couldn't look” into an outcome",
 ];
@@ -432,7 +432,7 @@ skill = (b − y)² − brier`}</div>
 
       <footer className="footer">
         <div className="wrap">
-          <Addresses token={TOKEN_ADDRESS} chainName={CHAIN.name} chainId={CHAIN.id} explorer={LINKS.explorer} />
+          <Addresses token={TOKEN_ADDRESS} dev={DEV} chainName={CHAIN.name} chainId={CHAIN.id} explorer={LINKS.explorer} />
           <div className="footer__row">
             <div>
               <p>

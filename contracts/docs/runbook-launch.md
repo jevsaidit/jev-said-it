@@ -973,6 +973,10 @@ must appear**: if none appears, go straight to the third outcome.
   the launch went through a UI and index 2 can be the intermediary. You have already
   verified the key in §4.4.
 
+> **Superseded on 22/09/2026 by the Captain:** the dev wallet buys 0.036 ETH in the launch transaction
+> through the Pons UI (`launchAndBuy`), holds, and is excluded from rewards; the buy was measured on a fork
+> and pays no snipe tax (`docs/LAUNCH-CHECKLIST.md`). The paragraph below is the previous plan.
+>
 > **No team capital moves in this step or in the ones after.** The team does not buy
 > supply (§1.3): the old version of this runbook had the purchase of 25% on the curve here,
 > with the 99% snipe tax window to dodge. If you were expecting it, it is not missing: it was removed.

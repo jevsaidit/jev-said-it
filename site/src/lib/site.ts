@@ -11,6 +11,12 @@ export const SITE_HOST = new URL(SITE_URL).host;
 // Optional, printed only when set: the timelock that owns the router and the distributor after the
 // handover. Nothing is guessed: without it the page states the design, not an address.
 export const TIMELOCK_ADDRESS = env(process.env.NEXT_PUBLIC_TIMELOCK_ADDRESS);
+// The dev wallet and what it bought in the launch transaction (decision of 22/09/2026: it buys and holds,
+// declared). Set at launch with the token, not before: a dev wallet announced early is watched by snipers.
+export const DEV = {
+  wallet: env(process.env.NEXT_PUBLIC_DEV_WALLET),
+  share: env(process.env.NEXT_PUBLIC_DEV_SHARE), // e.g. "2.08% of supply"
+};
 
 export const LINKS = {
   x: "https://x.com/jevsaidit",

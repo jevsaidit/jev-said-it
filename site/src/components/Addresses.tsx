@@ -32,7 +32,7 @@ function Row({ label, value, explorer }: { label: string; value: string; explore
   );
 }
 
-export function Addresses({ token, chainName, chainId, explorer }: { token?: string; chainName: string; chainId: number; explorer: string }) {
+export function Addresses({ token, dev, chainName, chainId, explorer }: { token?: string; dev?: { wallet?: string; share?: string }; chainName: string; chainId: number; explorer: string }) {
   const [cfg, setCfg] = useState<Config | null>(null);
   useEffect(() => {
     if (!token) return;
@@ -52,6 +52,9 @@ export function Addresses({ token, chainName, chainId, explorer }: { token?: str
         <Row label="Token" value={token} explorer={`${explorer}/token/${token}`} />
         {cfg?.callLedger && <Row label="CallLedger" value={cfg.callLedger} explorer={`${explorer}/address/${cfg.callLedger}`} />}
         {cfg?.rewardsDistributor && <Row label="RewardsDistributor" value={cfg.rewardsDistributor} explorer={`${explorer}/address/${cfg.rewardsDistributor}`} />}
+        {dev?.wallet && (
+          <Row label={`Dev wallet${dev.share ? ` · bought ${dev.share} at launch, holds, no rewards` : " · holds, no rewards"}`} value={dev.wallet} explorer={`${explorer}/address/${dev.wallet}`} />
+        )}
       </ul>
     </div>
   );
