@@ -79,6 +79,19 @@ to a winner's claim.
 
 ## Status
 
-Not launched. The contract address goes up here, on [jevsaidit.com](https://www.jevsaidit.com) and on
-[@jevsaidit](https://x.com/jevsaidit) the moment it exists. An address you see anywhere else first is
-not ours. There is no Telegram yet: any group using the name is not us.
+**Live on Robinhood Chain since 22 September 2026.**
+
+| | address |
+|---|---|
+| $JEV token | [`0xFaa73040cf567546A8190cdb0C7C1E3D5c3ea4d3`](https://robinhoodchain.blockscout.com/token/0xFaa73040cf567546A8190cdb0C7C1E3D5c3ea4d3) |
+| CallLedger | `0x412155814aF968d27b35bF546700e11a86BBBEEF` |
+| RewardsDistributor | `0x44E9ed5eCb8684DfF7EDca1BE3a267CdDb23B071` |
+| FeeRouter | `0x9E27EFEfa3F7697ff8e49dF106a5b9DE86aF3625` |
+| PonsEscrowAdapter (the creator fee recipient) | `0x8B639CFB74349B21569bE0fB660a8144c6bdb85d` |
+| UniV4SwapAdapter | `0x2e35872c4525f265D9e81f999944c14F91535Add` |
+| Timelock (24h, owns the four above) | `0xB39D54266b47356Cc239a579332B5C729C91b043` |
+| Dev wallet (bought 1.91% of the supply in the launch transaction, holds, no rewards) | `0xD8DC13844463157509d0c21840bed6cA1FE2B1e6` |
+
+Check them yourself: `owner()` on the router, the distributor and the ledger returns the timelock,
+`getMinDelay()` returns 86400, and the adapter's `router()` is the FeeRouter. An address you see
+anywhere else is not ours. There is no Telegram yet: any group using the name is not us.
