@@ -71,3 +71,19 @@ export function xCredsFromEnv(env: NodeJS.ProcessEnv): XCreds | null {
   if (set !== 4) throw new Error("X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN and X_ACCESS_SECRET must all be set, or none");
   return { apiKey: v[0]!, apiSecret: v[1]!, accessToken: v[2]!, accessSecret: v[3]! };
 }
+
+/** Until this moment X's API refuses posts carrying crypto addresses ("prohibited for the first 7 days after
+ *  authentication", measured 22/09/2026 on the launch tweet). A post that would be refused is worse than a
+ *  post without its hex: the lines carrying 0x… are dropped from the X version and the site is named instead,
+ *  where every receipt and transaction is. Telegram and the database keep the full text. */
+export const X_NO_HEX_UNTIL = Date.parse(process.env.X_NO_HEX_UNTIL || "2026-09-29T12:00:00Z");
+const HEX = /0x[0-9a-fA-F]{2,}/;
+
+export function forX(text: string, now: number = Date.now(), until: number = X_NO_HEX_UNTIL): string {
+  if (now >= until || !HEX.test(text)) return text;
+  const lines = text.split("\n").filter((l) => !HEX.test(l));
+  const sig = lines.lastIndexOf("jev said it.");
+  const at = sig > 0 ? sig - (lines[sig - 1] === "" ? 1 : 0) : lines.length;
+  lines.splice(at, 0, "receipts: jevsaidit.com");
+  return lines.join("\n");
+}

@@ -9,7 +9,7 @@ type P = { params: Promise<{ id: string; side: string }> };
 // Rendered per request, never stored: a page drawn while the engine was blind must not outlive the hiccup.
 export const dynamic = "force-dynamic";
 
-const BRAND_IMAGE = "/brand/og-1200x630.png";
+const BRAND_IMAGE = "/brand/og-jev-1200x630.png";
 const description = "A model commits to a probability on-chain before anyone answers. Holders agree or disagree.";
 
 export async function generateMetadata({ params }: P): Promise<Metadata> {

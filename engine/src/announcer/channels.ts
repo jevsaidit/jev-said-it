@@ -1,4 +1,4 @@
-import { postTweet, type XCreds } from "./x.js";
+import { forX, postTweet, type XCreds } from "./x.js";
 
 export type Channel = "telegram" | "x";
 
@@ -51,7 +51,7 @@ export function makeSender(mode: "test" | "live", env: { tgToken: string; tgChan
       }
       if (!env.x) throw new Error("X credentials not set");
       try {
-        await postTweet(env.x, text);
+        await postTweet(env.x, forX(text));
       } catch (e) {
         if ((e as Error).name === "TimeoutError" || (e as Error).name === "AbortError") throw new DeliveryUnknownError("x: no answer in 15s");
         throw e;

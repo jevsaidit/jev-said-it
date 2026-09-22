@@ -13,3 +13,16 @@ describe("RPC endpoints", () => {
     expect(errText(new Error("plain\nmore"))).toBe("plain");
   });
 });
+
+import { forX } from "../src/announcer/x.js";
+describe("X without hex until the API allows it", () => {
+  const post = "the fees came in.\n0.01 ETH bought $JEV. 3M burned. the rest pays the callers.\ntx: https://robinhoodchain.blockscout.com/tx/0xabc123\n\njev said it.\n#jevsaidit";
+  const before = Date.parse("2026-09-23T00:00:00Z");
+  it("drops the lines with 0x… and names the site, before the signature", () => {
+    expect(forX(post, before)).toBe("the fees came in.\n0.01 ETH bought $JEV. 3M burned. the rest pays the callers.\nreceipts: jevsaidit.com\n\njev said it.\n#jevsaidit");
+  });
+  it("leaves a post without hex alone, and everything alone after the date", () => {
+    expect(forX("epoch 1 is open.\n\njev said it.\n#jevsaidit", before)).toBe("epoch 1 is open.\n\njev said it.\n#jevsaidit");
+    expect(forX(post, Date.parse("2026-10-01T00:00:00Z"))).toBe(post);
+  });
+});
