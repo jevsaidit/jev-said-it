@@ -1513,3 +1513,53 @@ code,
   font-family: var(--font-data);
   font-size: 0.78rem;
 }
+
+/* ---------- treasury: the fees' path, each row with its transaction ---------- */
+.treasury {
+  margin-top: 2rem;
+}
+.treasury h3 {
+  font-family: var(--font-display);
+  font-size: var(--step-0);
+  margin: 0 0 0.8rem;
+}
+.treasury__totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem 1.2rem;
+  margin: 0 0 1rem;
+}
+.treasury__totals dt {
+  font-size: 0.8rem;
+  opacity: 0.75;
+}
+.treasury__totals dd {
+  margin: 0.1rem 0 0;
+  font-family: var(--font-data);
+}
+.treasury__ops {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+.treasury__ops li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.8rem;
+  align-items: baseline;
+}
+@media (max-width: 520px) {
+  .treasury__ops li {
+    grid-template-columns: 1fr auto;
+  }
+  .treasury__ops li > .muted {
+    grid-column: 1 / -1;
+  }
+}
+.treasury__note {
+  font-size: 0.8rem;
+  margin-top: 0.8rem;
+}

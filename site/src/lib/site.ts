@@ -11,6 +11,8 @@ export const SITE_HOST = new URL(SITE_URL).host;
 // Optional, printed only when set: the timelock that owns the router and the distributor after the
 // handover. Nothing is guessed: without it the page states the design, not an address.
 export const TIMELOCK_ADDRESS = env(process.env.NEXT_PUBLIC_TIMELOCK_ADDRESS);
+// The FeeRouter, linked from the treasury block so its balances can be read on the explorer.
+export const FEE_ROUTER_ADDRESS = env(process.env.NEXT_PUBLIC_FEE_ROUTER);
 // The dev wallet and what it bought in the launch transaction (decision of 22/09/2026: it buys and holds,
 // declared). Set at launch with the token, not before: a dev wallet announced early is watched by snipers.
 export const DEV = {
@@ -38,8 +40,12 @@ export const CHAIN = {
 // contracts/src/CallLedger.sol
 export const LEDGER = {
   epochHours: 6,
-  tokensPerCall: 10_000,
+  // The rule the ENGINE scores by, from epoch 1 (decision of 22/09/2026): at least 1,000,000 held at the
+  // epoch's start, one call per 100,000, up to 50. The contract's own constants stay 10,000 / 50.
+  minHold: 1_000_000,
+  tokensPerCall: 100_000,
   maxCallsPerEpoch: 50,
+  contractTokensPerCall: 10_000,
 } as const;
 
 // docs/2026-09-21-verdict-engine-spec.md §3, §6, §7; contracts/src/RewardsDistributor.sol

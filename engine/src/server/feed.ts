@@ -1,5 +1,5 @@
 import { balanceAt, type Db } from "../db/db.js";
-import { MAX_CALLS_PER_EPOCH, P_SCALE, parseProb, TOKENS_PER_CALL } from "../score/score.js";
+import { capacityAt, P_SCALE, parseProb, rulesFor } from "../score/score.js";
 
 // The public feed (spec §9.4). Everything that comes out of here is already public on-chain or
 // committed by an on-chain hash: the feed makes it readable, it adds no trust.
@@ -134,11 +134,9 @@ export async function holderView(
   const { token, account, epoch, startBlock, indexedBlock } = args;
   const known = startBlock !== null && indexedBlock !== null && indexedBlock >= startBlock;
   const balanceAtStart = known ? await balanceAt(db, token, account, startBlock) : null;
-  let capacityAtStart: bigint | null = null;
-  if (balanceAtStart !== null) {
-    capacityAtStart = balanceAtStart / TOKENS_PER_CALL;
-    if (capacityAtStart > MAX_CALLS_PER_EPOCH) capacityAtStart = MAX_CALLS_PER_EPOCH;
-  }
+  // The same function the scoring uses: the panel cannot promise calls the engine will drop.
+  const capacityAtStart = balanceAtStart === null ? null : capacityAt(epoch, balanceAtStart);
+  const rules = rulesFor(epoch);
   const r = await db.query<{ epoch: number; payload: string }>("SELECT epoch, payload FROM epochs WHERE state = 'PUBLISHED' ORDER BY epoch");
   const claims = r.rows.flatMap((row) => {
     const cs = (JSON.parse(row.payload) as { claims?: Array<{ account: string; amount: string; proof: string[] }> }).claims ?? [];
@@ -152,8 +150,9 @@ export async function holderView(
     indexedBlock,
     balanceAtStart, // null = not measurable yet (index behind the start block)
     capacityAtStart,
-    tokensPerCall: TOKENS_PER_CALL,
-    maxCallsPerEpoch: MAX_CALLS_PER_EPOCH,
+    minHold: rules.minHold,
+    tokensPerCall: rules.tokensPerCall,
+    maxCallsPerEpoch: rules.maxCalls,
     claims, // published rewards; whether each was already claimed is read on-chain (hasClaimed)
   };
 }

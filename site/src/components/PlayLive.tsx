@@ -16,7 +16,7 @@ import { WalletPicker } from "./WalletPicker";
 type Provider = EIP1193Provider & { on?: (e: string, f: (...a: unknown[]) => void) => void; removeListener?: (e: string, f: (...a: unknown[]) => void) => void };
 
 type Claim = { epoch: number; amount: string; proof: Hex[] };
-type Holder = { epoch: number; startBlock?: string; balanceAtStart: string | null; capacityAtStart: string | null; tokensPerCall: string; maxCallsPerEpoch: string; claims: Claim[] };
+type Holder = { epoch: number; startBlock?: string; balanceAtStart: string | null; capacityAtStart: string | null; minHold?: string; tokensPerCall: string; maxCallsPerEpoch: string; claims: Claim[] };
 type Question = { id: Hex; epoch?: number; symbol?: string | null; token?: string; p?: string; model?: string; deadline?: number; status?: string };
 type ClaimState = Claim & { claimed: boolean; voided: boolean; opensAt: number; expiresAt: number };
 type Tx = { kind: "idle" } | { kind: "wallet" } | { kind: "pending"; hash: Hex } | { kind: "done"; hash: Hex } | { kind: "error"; msg: string; hash?: Hex };
@@ -272,6 +272,9 @@ export function PlayLive({ ticker, cfg, chainId: wantId }: { ticker: string; cfg
   };
 
   const capStart = holder?.capacityAtStart != null ? BigInt(holder.capacityAtStart) : null;
+  const minHold = BigInt(holder?.minHold ?? "1000000000000000000000000");
+  // Held something at the epoch's start, but less than the minimum: not the "bought too late" case.
+  const below = holder?.balanceAtStart != null && BigInt(holder.balanceAtStart) > 0n && BigInt(holder.balanceAtStart) < minHold;
   // What will actually be scored: the contract enforces the balance now, the engine the balance at start.
   const counted = capNow === null ? null : capStart === null ? capNow : capStart < capNow ? capStart : capNow;
   const left = counted !== null && used !== null ? (counted > used ? counted - used : 0n) : null;
@@ -356,8 +359,14 @@ export function PlayLive({ ticker, cfg, chainId: wantId }: { ticker: string; cfg
           </div>
         </dl>
 
-        {capNow === 0n && <p className="play__note">You need at least {holder ? fmtTokens(holder.tokensPerCall) : "10,000"} {T} in this wallet to make a call.</p>}
-        {capNow !== null && capNow > 0n && capStart === 0n && (
+        {capNow === 0n && <p className="play__note">You need at least {fmtTokens(minHold)} {T} in this wallet, held when an epoch starts, to play.</p>}
+        {capNow !== null && capNow > 0n && capStart === 0n && below && (
+          <p className="play__note play__note--warn">
+            You held {fmtTokens(holder!.balanceAtStart!)} {T} when this epoch started. Playing takes at least {fmtTokens(minHold)}: with that
+            balance at the start of the next epoch, your calls count.
+          </p>
+        )}
+        {capNow !== null && capNow > 0n && capStart === 0n && !below && (
           <p className="play__note play__note--warn">
             You bought after this epoch started. Calls sent now would be dropped at scoring, so they are disabled. You play from the next epoch.
           </p>

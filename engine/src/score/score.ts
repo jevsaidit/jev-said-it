@@ -5,6 +5,29 @@
 export const P_SCALE = 10_000n;
 export const TOKENS_PER_CALL = 10_000n * 10n ** 18n; // CallLedger.TOKENS_PER_CALL
 export const MAX_CALLS_PER_EPOCH = 50n; // CallLedger.MAX_CALLS_PER_EPOCH
+
+// Engine rule, stricter than the contract, decided on 22/09/2026 and in force FROM EPOCH 1: hold at least
+// 1,000,000 $JEV at the epoch's start to play, one call per 100,000, up to 50. The contract still accepts
+// a call per 10,000 (its constants cannot change); calls beyond this capacity are dropped when scoring,
+// exactly like calls beyond the start-of-epoch balance. Epoch 0 keeps the launch rule, so anyone
+// recomputing it gets the same result.
+export const RULE_V2_FROM_EPOCH = 1;
+export const MIN_HOLD_V2 = 1_000_000n * 10n ** 18n;
+export const TOKENS_PER_CALL_V2 = 100_000n * 10n ** 18n;
+
+export function rulesFor(epoch: number): { minHold: bigint; tokensPerCall: bigint; maxCalls: bigint } {
+  return epoch >= RULE_V2_FROM_EPOCH
+    ? { minHold: MIN_HOLD_V2, tokensPerCall: TOKENS_PER_CALL_V2, maxCalls: MAX_CALLS_PER_EPOCH }
+    : { minHold: TOKENS_PER_CALL, tokensPerCall: TOKENS_PER_CALL, maxCalls: MAX_CALLS_PER_EPOCH };
+}
+
+/** Calls that COUNT for a wallet in `epoch`, from its balance at the epoch's start. */
+export function capacityAt(epoch: number, balance: bigint): bigint {
+  const r = rulesFor(epoch);
+  if (balance < r.minHold) return 0n;
+  const c = balance / r.tokensPerCall;
+  return c > r.maxCalls ? r.maxCalls : c;
+}
 export const MIN_RESOLVED_CALLS = 3;
 export const MAX_UNRESOLVABLE_SHARE = 0.2; // spec §6: above it, the epoch is not paid
 
@@ -49,6 +72,7 @@ export function callSkill(p: bigint, agree: boolean, y: 0n | 1n, ref: bigint): b
 }
 
 export function scoreEpoch(i: {
+  epoch: number;
   questions: ScoredQuestion[];
   calls: Call[]; // all CallSubmitted events of the epoch
   balanceAtStart: Map<string, bigint>;
@@ -72,9 +96,7 @@ export function scoreEpoch(i: {
   for (const [address, list] of byWallet) {
     // The contract counts capacity on the balance AT THE TIME of the call: buy, answer, sell.
     // Here the balance at epoch start applies (spec §5.4), and calls beyond that capacity are dropped.
-    const bal = i.balanceAtStart.get(address) ?? 0n;
-    let cap = bal / TOKENS_PER_CALL;
-    if (cap > MAX_CALLS_PER_EPOCH) cap = MAX_CALLS_PER_EPOCH;
+    const cap = capacityAt(i.epoch, i.balanceAtStart.get(address) ?? 0n);
     const valid = list.filter((c) => qs.has(c.questionId.toLowerCase())).slice(0, Number(cap));
     let score = 0n;
     let resolved = 0;

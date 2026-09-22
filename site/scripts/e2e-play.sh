@@ -137,6 +137,7 @@ check "$(curl -s -o $LOG/win.png -w '%{http_code} %{content_type}' $W/api/card/w
 check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/card/win/0/$U2) $(curl -s -o /dev/null -w '%{http_code}' $W/w/0/$U2)" "404 404" "no card and no page for a reward that was not published"
 [ "$(echo "$R" | jq -r '.error // empty')" ] && echo "   error: $(echo "$R" | jq -r .error) | $(echo "$R" | jq -r .panel)"
 
+check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/feed/treasury) $(curl -s $W/api/feed/treasury | jq -r 'type')" "200 array" "the treasury log is public through the site"
 echo "4. two wallets installed, Phantom holding window.ethereum: the header asks, remembers, recovers"
 R=$(node $HERE/wallets.e2e.mjs $W)
 check "$(echo "$R" | jq -r '.picker | join(",")')" "Phantom,MetaMask" "both wallets are offered"

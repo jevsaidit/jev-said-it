@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decide } from "../src/resolve/resolve.js";
-import { allocate, callSkill, parseProb, scoreEpoch, TOKENS_PER_CALL, type Call, type ScoredQuestion } from "../src/score/score.js";
+import { allocate, callSkill, parseProb, scoreEpoch, TOKENS_PER_CALL, type Call, type ScoredQuestion, capacityAt } from "../src/score/score.js";
 
 describe("decide: the price direction", () => {
   const b0 = 100n;
@@ -41,7 +41,7 @@ const TOK = (n: bigint) => n * TOKENS_PER_CALL;
 describe("scoreEpoch", () => {
   const questions = [q("a", "1"), q("b", "0"), q("c", "1"), q("d", "0"), q("e", "VOID")];
   const perfect = (w: string) => [call(w, "a", true), call(w, "b", false), call(w, "c", true), call(w, "d", false), call(w, "e", true)];
-  const base = { questions, excluded: new Set<string>(), reference: "baseline" as const, topFraction: 1 };
+  const base = { epoch: 0, questions, excluded: new Set<string>(), reference: "baseline" as const, topFraction: 1 };
 
   it("flash-buying does not pay: zero balance at epoch start = zero valid calls, even if they went through on-chain", () => {
     const out = scoreEpoch({ ...base, calls: [...perfect("0xhonest"), ...perfect("0xflash")], balanceAtStart: new Map([["0xhonest", TOK(10n)]]) });
@@ -86,5 +86,28 @@ describe("allocate", () => {
     const out = allocate([w("0xa", 64n), w("0xb", 8n)], 1000n);
     expect(out).toEqual([{ address: "0xa", amount: 888n }, { address: "0xb", amount: 111n }]);
     expect(out.reduce((s, x) => s + x.amount, 0n)).toBeLessThanOrEqual(1000n);
+  });
+});
+
+describe("the stricter rule from epoch 1 (22/09/2026)", () => {
+  const E = 10n ** 18n;
+  it("epoch 0 keeps the launch rule: one call per 10k", () => {
+    expect(capacityAt(0, 10_000n * E)).toBe(1n);
+    expect(capacityAt(0, 999_999n * E)).toBe(50n);
+  });
+  it("from epoch 1: nothing under 1M, then one call per 100k, up to 50", () => {
+    expect(capacityAt(1, 999_999n * E)).toBe(0n);
+    expect(capacityAt(1, 1_000_000n * E)).toBe(10n);
+    expect(capacityAt(1, 2_550_000n * E)).toBe(25n);
+    expect(capacityAt(7, 19_075_478n * E)).toBe(50n);
+  });
+  it("a wallet under the minimum is not scored in epoch 1, even with perfect calls", () => {
+    const base = { questions: [q("a", "1"), q("b", "0"), q("c", "1")], excluded: new Set<string>(), reference: "baseline" as const, topFraction: 1 };
+    const small = [call("0xsmall", "a", true), call("0xsmall", "b", false), call("0xsmall", "c", true)];
+    const big = [call("0xbig", "a", true), call("0xbig", "b", false), call("0xbig", "c", true)];
+    const out = scoreEpoch({ ...base, epoch: 1, calls: [...small, ...big], balanceAtStart: new Map([["0xsmall", 900_000n * E], ["0xbig", 1_000_000n * E]]) });
+    const w = new Map(out.wallets.map((x) => [x.address, x]));
+    expect(w.get("0xsmall")!.callsValid).toBe(0);
+    expect(w.get("0xbig")!.callsValid).toBe(3);
   });
 });

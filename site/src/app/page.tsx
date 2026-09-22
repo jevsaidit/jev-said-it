@@ -3,8 +3,9 @@ import { Addresses } from "@/components/Addresses";
 import { LiveFeed } from "@/components/LiveFeed";
 import { Play } from "@/components/Play";
 import { Receipt } from "@/components/Receipt";
+import { Treasury } from "@/components/Treasury";
 import { WalletButton } from "@/components/WalletButton";
-import { CHAIN, DEV, FEE_SPLIT, LEDGER, LINKS, RULES, SITE_URL, TICKER, TIMELOCK_ADDRESS, TOKEN_ADDRESS } from "@/lib/site";
+import { CHAIN, DEV, FEE_ROUTER_ADDRESS, FEE_SPLIT, LEDGER, LINKS, RULES, SITE_URL, TICKER, TIMELOCK_ADDRESS, TOKEN_ADDRESS } from "@/lib/site";
 
 const T = `$${TICKER}`;
 
@@ -17,7 +18,7 @@ const EPOCH = [
   {
     t: "until calls close",
     h: "Call",
-    p: `Agree or disagree. One call per ${LEDGER.tokensPerCall.toLocaleString("en-US")} ${T} held at the start of the epoch, up to ${LEDGER.maxCallsPerEpoch}. Nothing is staked.`,
+    p: `Agree or disagree. Hold at least ${LEDGER.minHold.toLocaleString("en-US")} ${T} at the start of the epoch: one call per ${LEDGER.tokensPerCall.toLocaleString("en-US")}, up to ${LEDGER.maxCallsPerEpoch}. Nothing is staked.`,
   },
   {
     t: `close + ${RULES.horizonHours}h`,
@@ -387,6 +388,7 @@ skill = (b − y)² − brier`}</div>
                   </li>
                 ))}
               </ul>
+              {TOKEN_ADDRESS && <Treasury ticker={TICKER} explorer={LINKS.explorer} router={FEE_ROUTER_ADDRESS} />}
             </div>
           </div>
         </section>
@@ -413,13 +415,15 @@ skill = (b − y)² − brier`}</div>
                 Agree or disagree with Jev.
               </h2>
               <p>
-                Connect a browser wallet on {CHAIN.name}. Every {LEDGER.tokensPerCall.toLocaleString("en-US")} {T} you
-                held when the epoch started is one call, up to {LEDGER.maxCallsPerEpoch}. All your calls go out in one
-                transaction: you pay gas, you stake nothing.
+                Connect a browser wallet on {CHAIN.name}. Hold at least {LEDGER.minHold.toLocaleString("en-US")} {T} when
+                an epoch starts: every {LEDGER.tokensPerCall.toLocaleString("en-US")} is one call, up to{" "}
+                {LEDGER.maxCallsPerEpoch}. All your calls go out in one transaction: you pay gas, you stake nothing.
               </p>
               <p className="muted">
                 The contract refuses a call beyond your balance, and the engine drops any call beyond what you held at
-                the epoch&apos;s start. Buying, calling and selling in the same epoch does not count.
+                the epoch&apos;s start. Buying, calling and selling in the same epoch does not count. (The contract itself
+                counts one call per {LEDGER.contractTokensPerCall.toLocaleString("en-US")}; since epoch 1 the engine scores
+                only wallets holding the minimum above, and the site sends nothing it would drop.)
               </p>
             </div>
             <Play ticker={TICKER} />

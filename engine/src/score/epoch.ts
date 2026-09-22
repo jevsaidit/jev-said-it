@@ -173,7 +173,7 @@ export async function closeEpoch(d: EpochDeps, epoch: number, publish: boolean):
   for (const c of new Set(calls.map((x) => x.caller))) balances.set(c, await balanceAt(db, cfg.token, c, startBlock));
 
   const excluded = new Set(rcfg.excluded);
-  const scored = scoreEpoch({ questions, calls, balanceAtStart: balances, excluded, reference: rcfg.reference, topFraction: rcfg.topFraction });
+  const scored = scoreEpoch({ epoch, questions, calls, balanceAtStart: balances, excluded, reference: rcfg.reference, topFraction: rcfg.topFraction });
   const base = { epoch, reference: rcfg.reference, startBlock, questions: questions.map((q) => ({ id: q.id, outcome: q.outcome })), wallets: scored.wallets };
   if (scored.state === "NOT_PAYABLE") {
     await store(db, epoch, "NOT_PAYABLE", scored.reason, null, null, base);
