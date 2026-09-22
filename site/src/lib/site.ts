@@ -20,8 +20,7 @@ export const DEV = {
 
 export const LINKS = {
   x: "https://x.com/jevsaidit",
-  // the public showcase repo, never the working one. It goes public at launch together with the token
-  // address, so the page links it only once TOKEN_ADDRESS is set (before that it is a 404 for everyone).
+  // the public showcase repo (public since 22/09/2026), never the working one
   github: "https://github.com/jevsaidit/jev-said-it",
   telegram: env(process.env.NEXT_PUBLIC_TELEGRAM_URL),
   explorer: "https://robinhoodchain.blockscout.com",

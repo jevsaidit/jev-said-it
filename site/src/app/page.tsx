@@ -146,11 +146,9 @@ export default function Home() {
                 <a className="btn" href="#receipts">
                   Check a receipt
                 </a>
-                {TOKEN_ADDRESS && (
-                  <a className="btn btn--ghost" href={LINKS.github} rel="noopener" target="_blank">
-                    Read the code
-                  </a>
-                )}
+                <a className="btn btn--ghost" href={LINKS.github} rel="noopener" target="_blank">
+                  Read the code
+                </a>
               </div>
 
               {TOKEN_ADDRESS ? (
@@ -463,20 +461,21 @@ skill = (b − y)² − brier`}</div>
                   X @jevsaidit
                 </a>
               </li>
-              {LINKS.telegram && (
+              {LINKS.telegram ? (
                 <li>
                   <a href={LINKS.telegram} rel="noopener" target="_blank">
                     Telegram
                   </a>
                 </li>
+              ) : (
+                // No channel yet (decision of 22/09/2026). Fake "official" groups follow every launch: say so.
+                <li className="muted">Telegram: none yet. Any group using our name isn&apos;t us.</li>
               )}
-              {TOKEN_ADDRESS && (
-                <li>
-                  <a href={LINKS.github} rel="noopener" target="_blank">
-                    GitHub
-                  </a>
-                </li>
-              )}
+              <li>
+                <a href={LINKS.github} rel="noopener" target="_blank">
+                  GitHub
+                </a>
+              </li>
             </ul>
           </div>
         </div>
