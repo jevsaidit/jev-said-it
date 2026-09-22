@@ -6,10 +6,11 @@ out/
 .logs/
 .ignore/
 
-# Ignores development broadcast logs
-!/broadcast
-/broadcast/*/31337/
-/broadcast/**/dry-run/
+# Broadcast logs. Here the 4663 records are the REAL mainnet deploy and must never be committed.
+# Foundry's template ships `!/broadcast`, a NEGATION that un-ignored the whole directory and quietly
+# beat both the root .gitignore and .git/info/exclude: a nested .gitignore wins over both. Measured
+# 22/09/2026, `git add -A` staged the mainnet records and only the identity hook stopped the commit.
+/broadcast/
 
 # Dotenv file
 .env
