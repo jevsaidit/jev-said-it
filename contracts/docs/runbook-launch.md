@@ -193,6 +193,10 @@ One transparency step remains, and it is the only one: **publish the `TEAM_WALLE
 saying that it is the recipient of the fee bucket and not a wallet that holds supply. At T+15 min it must be
 labeled that way on the dashboard (§5.3).
 
+> **Superseded on 22/09/2026 (Captain):** the dev wallet does buy, 0.0345 ETH (~2%) inside the launch
+> transaction through the Pons UI, where it pays no snipe tax (measured on a fork), and holds it,
+> declared on the site and excluded from rewards. The box below is the reasoning of the previous plan.
+>
 > **How much this changes the launch, and why it is worth saying.** The previous version of
 > this procedure included buying 25% of the supply on the curve in the first seconds: full
 > exposure to the **99%** snipe tax window (§0), an ETH spending cap to decide
