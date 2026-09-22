@@ -13,8 +13,9 @@ Nothing here is investment advice. Calls are free: nobody stakes tokens or bets 
    ETH 6 hours after calls close?*) is a small canonical JSON with the model's probability in it.
    Its keccak256 hash is the question's id, and the `CallLedger` stores that id before anyone can
    answer. Nobody can move the number after seeing the outcome, including us.
-2. **Holders call it.** One call per 10,000 tokens held at the start of the epoch, up to 50. A
-   buy after the epoch starts does not add calls.
+2. **Holders call it.** Hold at least 1,000,000 tokens at the start of the epoch: one call per
+   100,000, up to 50 (from epoch 1; the `CallLedger` itself counts one per 10,000, and the engine scores
+   only what this rule allows). A buy after the epoch starts does not add calls.
 3. **The price settles it.** The outcome is read from the pool's own `Swap` events: the
    time-weighted average price over the 10 minutes before the calls close, against the same average
    6 hours later. A price pushed in the last block barely moves an average. An outcome that cannot
