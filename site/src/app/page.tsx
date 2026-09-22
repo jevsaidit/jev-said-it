@@ -54,7 +54,7 @@ const WONT = [
   "Pay for raw volume or airdrop by transaction count",
   "Tax transfers. Fees only happen at the swap",
   "Announce surprise buybacks on X. Buybacks run from the router, on-chain",
-  `Hide what the team holds. The dev wallet buys ${T} in the launch transaction and keeps it, printed below with its share and never in the rewards; beyond that the team is paid ${FEE_SPLIT.find((f) => f.key === "team")!.bps / 100}% of fees in ETH`,
+  `Hide what the team holds. The dev wallet buys ${T} in the launch transaction and keeps it, printed in the footer with its share once launched, and never in the rewards; beyond that the team is paid ${FEE_SPLIT.find((f) => f.key === "team")!.bps / 100}% of fees in ETH`,
   "Publish another model's answer as “Jev said it”. Every verdict names the model that gave it",
   "Turn “couldn't look” into an outcome",
 ];
@@ -169,7 +169,7 @@ export default function Home() {
                   <span className="dot" aria-hidden />
                   <span>
                     <strong>Not launched.</strong> The contract address goes up here and on @jevsaidit
-                    before launch. An address you see anywhere else first isn&apos;t ours.
+                    the moment it exists. An address you see anywhere else first isn&apos;t ours.
                   </span>
                 </p>
               )}
@@ -317,9 +317,10 @@ skill = (b − y)² − brier`}</div>
               </h2>
               <p>
                 <strong>The token.</strong> 1,000,000,000 {T}, all of it sold on the Pons bonding curve: no presale,
-                no team allocation, no vesting. When the curve fills, it graduates into a Uniswap v4 pool. The dev
-                wallet bought {DEV.share ?? "about 2% of the supply"} in the launch transaction and holds it; it never
-                takes rewards.
+                no team allocation, no vesting. When the curve fills, it graduates into a Uniswap v4 pool. {" "}
+                {DEV.share
+                  ? `The dev wallet bought ${DEV.share} in the launch transaction and holds it; it never takes rewards.`
+                  : "The dev wallet buys about 2% of the supply in the launch transaction and holds it; it never takes rewards."}
               </p>
               <p>
                 Every swap pays Pons 1%. About 0.70% of the volume comes back as creator fees, and the creator is a
