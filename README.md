@@ -1,7 +1,7 @@
-# Jev Said It ($JEVSAIDIT)
+# Jev Said It ($JEV)
 
 A model commits to a probability **on-chain, before anyone answers**. Holders agree or disagree.
-When the price settles, the best-calibrated calls are paid in $JEVSAIDIT from the token's own
+When the price settles, the best-calibrated calls are paid in $JEV from the token's own
 trading fees. On Robinhood Chain, launched through Pons.
 
 Not affiliated with TypeSafe AI. "Jev" is TypeSafe's model; this project uses it as a component.
