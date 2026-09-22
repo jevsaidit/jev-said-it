@@ -19,7 +19,14 @@ export const LINKS = {
   explorer: "https://robinhoodchain.blockscout.com",
 } as const;
 
-export const CHAIN = { name: "Robinhood Chain", id: 4663, testnetId: 46630 } as const;
+export const CHAIN = {
+  name: "Robinhood Chain",
+  id: 4663,
+  testnetId: 46630,
+  // what the header wallet button adds to a wallet that does not know the chain (same as lib/chains.ts)
+  rpc: "https://rpc.mainnet.chain.robinhood.com",
+  explorer: "https://robinhoodchain.blockscout.com",
+} as const;
 
 // contracts/src/CallLedger.sol
 export const LEDGER = {

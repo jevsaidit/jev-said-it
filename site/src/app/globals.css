@@ -235,9 +235,21 @@ code,
    sections, follow. */
 .nav__row > nav {
   order: 2;
+  margin-left: auto;
 }
 .nav__follow {
   order: 3;
+  margin-left: auto;
+}
+.nav__wallet {
+  order: 4;
+  white-space: nowrap;
+}
+/* A phone has room for the brand and two buttons only if the follow button is just "X". */
+@media (max-width: 520px) {
+  .nav__follow-long {
+    display: none;
+  }
 }
 .nav .btn {
   min-height: 44px;
@@ -253,6 +265,13 @@ code,
   }
   .nav__follow {
     order: 2;
+    margin-left: auto;
+  }
+  .nav__wallet {
+    order: 2;
+  }
+  .nav__row > nav {
+    margin-left: 0;
   }
   .nav__row > nav {
     order: 3;

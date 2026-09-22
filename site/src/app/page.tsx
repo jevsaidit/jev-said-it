@@ -3,6 +3,7 @@ import { Addresses } from "@/components/Addresses";
 import { LiveFeed } from "@/components/LiveFeed";
 import { Play } from "@/components/Play";
 import { Receipt } from "@/components/Receipt";
+import { WalletButton } from "@/components/WalletButton";
 import { CHAIN, FEE_SPLIT, LEDGER, LINKS, RULES, SITE_URL, TICKER, TIMELOCK_ADDRESS, TOKEN_ADDRESS } from "@/lib/site";
 
 const T = `$${TICKER}`;
@@ -85,9 +86,10 @@ export default function Home() {
             <span>jev said it</span>
           </a>
           {/* Before the section links in the DOM: on a phone it sits next to the brand, and the tab order follows the eye. */}
-          <a className="btn nav__follow" href={LINKS.x} rel="noopener" target="_blank">
-            Follow on X
+          <a className="btn btn--ghost nav__follow" href={LINKS.x} rel="noopener" target="_blank" aria-label="Follow on X">
+            <span className="nav__follow-long">Follow on </span>X
           </a>
+          <WalletButton />
           <nav aria-label="Sections">
             <ul className="nav__links">
               <li>

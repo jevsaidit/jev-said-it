@@ -73,6 +73,7 @@ R=$(browse $U1 call u1-call)
 has "$(echo "$R" | jq -r .before)" "100,000" "the panel shows the balance held at epoch start"
 has "$(echo "$R" | jq -r .before)" "10 of 10" "10 calls left: 100k tokens / 10k per call"
 check "$(echo "$R" | jq -r .questions)" 3 "the three open questions are listed"
+check "$(echo "$R" | jq -r .headerWallet)" "Switch to Robinhood Chain" "the header wallet button sees the account and the wrong network"
 check "$(echo "$R" | jq -r .submitLabel)" "Submit 3 calls" "the submit button counts the picks"
 has "$(echo "$R" | jq -r .tx)" "Confirmed on-chain" "the transaction is confirmed"
 check "$(cast call $LED 'callsUsed(uint256,address)(uint256)' 0 $U1 --rpc-url $A)" 3 "on-chain: 3 calls recorded for U1"
