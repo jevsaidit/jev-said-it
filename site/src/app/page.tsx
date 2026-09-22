@@ -461,15 +461,12 @@ skill = (b − y)² − brier`}</div>
                   X @jevsaidit
                 </a>
               </li>
-              {LINKS.telegram ? (
+              {LINKS.telegram && (
                 <li>
                   <a href={LINKS.telegram} rel="noopener" target="_blank">
                     Telegram
                   </a>
                 </li>
-              ) : (
-                // No channel yet (decision of 22/09/2026). Fake "official" groups follow every launch: say so.
-                <li className="muted">Telegram: none yet. Any group using our name isn&apos;t us.</li>
               )}
               <li>
                 <a href={LINKS.github} rel="noopener" target="_blank">
