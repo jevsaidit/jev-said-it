@@ -42,7 +42,9 @@ export function Record() {
   const pending = c.outcomes["pending"] ?? 0;
   return (
     <div className="record">
-      <h3>Jev&apos;s record</h3>
+      <h3>
+        Jev&apos;s record <a className="record__link" href="/e/0">see an epoch →</a>
+      </h3>
       <p className="muted">
         {c.resolved} resolved · {up} up · {down} down · {void_} void · {unresolvable} unresolvable · {pending} still open
       </p>

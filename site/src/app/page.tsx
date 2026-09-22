@@ -436,6 +436,66 @@ skill = (b − y)² − brier`}</div>
           </div>
         </section>
 
+        <section className="section" aria-labelledby="faq-h">
+          <div className="wrap">
+            <p className="eyebrow">Before you ask</p>
+            <h2 className="h2 h2--quiet" id="faq-h">
+              The questions everyone asks first.
+            </h2>
+            {/* Plain <details>: no script, works before the page is interactive, and every answer points at
+                something checkable instead of asking to be believed. */}
+            <div className="faq">
+              <details>
+                <summary>Can the team rug?</summary>
+                <p>
+                  There are no team tokens: every {T} was sold on the curve. The dev wallet bought{" "}
+                  {DEV.share ?? "about 2%"} in the launch transaction like anyone else, and it is printed in the footer.
+                  The fees are split by a contract, and the contracts are owned by a {RULES.timelockHours}-hour timelock,
+                  so no change can happen without a day of notice on-chain.
+                </p>
+              </details>
+              <details>
+                <summary>Who controls the contracts?</summary>
+                <p>
+                  The timelock{TIMELOCK_ADDRESS ? "" : " (address printed here at launch)"}. Check{" "}
+                  <code>owner()</code> on the router, the distributor and the ledger: they all answer with it, and{" "}
+                  <code>getMinDelay()</code> answers 86400. All six contracts are source-verified on the explorer.
+                </p>
+              </details>
+              <details>
+                <summary>What if Jev is wrong?</summary>
+                <p>
+                  Then whoever disagreed scores. The model&apos;s record against the baseline is published every epoch,
+                  including the epochs it loses, and every question&apos;s probability was hashed on-chain before anyone
+                  could answer.
+                </p>
+              </details>
+              <details>
+                <summary>Why do I need {LEDGER.minHold.toLocaleString("en-US")} {T} to play?</summary>
+                <p>
+                  Calls are free and pay real rewards, so they are rationed by what you hold at the epoch&apos;s start:
+                  one per {LEDGER.tokensPerCall.toLocaleString("en-US")}, up to {LEDGER.maxCallsPerEpoch}. The rule is in the
+                  engine&apos;s code, which is public, and it changed once — announced before it applied.
+                </p>
+              </details>
+              <details>
+                <summary>Do I stake anything?</summary>
+                <p>
+                  No. You pay gas for your own transaction and nothing else. Being wrong costs pride, not tokens, and
+                  nobody bets against anybody: rewards come from the token&apos;s trading fees.
+                </p>
+              </details>
+              <details>
+                <summary>Is this TypeSafe&apos;s project?</summary>
+                <p>
+                  No. &ldquo;Jev&rdquo; is TypeSafe&apos;s model and this project uses it as a component, pinned to a
+                  version that every receipt names. Not affiliated, not endorsed.
+                </p>
+              </details>
+            </div>
+          </div>
+        </section>
+
         <section className="section" aria-labelledby="wont-h">
           <div className="wrap">
             <p className="eyebrow">Commitments</p>

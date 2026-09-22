@@ -78,6 +78,7 @@ check "$(curl -s $W/api/callers | jq -r 'if .callers >= 0 then "counts" else "no
 QID=$(get /epochs/current | jq -r '.questions[0].id // "none"')
 check "$(curl -s -o /dev/null -w '%{http_code}' $W/q/$QID) $(curl -s -o /dev/null -w '%{http_code} %{content_type}' $W/api/card/q/$QID)" "200 200 image/png" "each question has its own page and card"
 has "$(curl -s $W/q/$QID | tr -d '\n')" "x.com/intent/post" "the question page can be passed on with one click"
+check "$(curl -s -o /dev/null -w '%{http_code}' $W/e/0) $(curl -s -o /dev/null -w '%{http_code} %{content_type}' $W/api/card/epoch/0)" "200 200 image/png" "an epoch has its own page and scoreboard card"
 check "$(echo "$R" | jq -r .headerWallet)" "Switch to Robinhood Chain" "the header wallet button sees the account and the wrong network"
 check "$(echo "$R" | jq -r .submitLabel)" "Submit 3 calls" "the submit button counts the picks"
 has "$(echo "$R" | jq -r .tx)" "Confirmed on-chain" "the transaction is confirmed"
@@ -143,6 +144,7 @@ check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/card/win/0/$U2) $(curl -s
 [ "$(echo "$R" | jq -r '.error // empty')" ] && echo "   error: $(echo "$R" | jq -r .error) | $(echo "$R" | jq -r .panel)"
 
 has "$(curl -s $W | tr -d '\n')" "ponsfamily.com/launchpad/" "the start box links where to buy"
+has "$(curl -s $W | tr -d '\n')" "Can the team rug?" "the page answers the first question a stranger asks"
 check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/feed/calibration) $(curl -s $W/api/feed/calibration | jq -r 'has("resolved")')" "200 true" "Jev's record is public through the site"
 check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/feed/treasury) $(curl -s $W/api/feed/treasury | jq -r 'type')" "200 array" "the treasury log is public through the site"
 # It may answer "not measurable" (502) off mainnet, but it must ANSWER: an unbounded read of it kept the
