@@ -34,5 +34,11 @@ export default async function Page({ params }: P) {
   const w = await winCard(epoch, addr);
   if (w === BLIND) return <SharePage image={BRAND_IMAGE} alt="Jev Said It" blind />;
   if (!w) notFound();
-  return <SharePage image={`/api/card/win/${epoch}/${addr}`} alt={`Won ${tokens(w.amount)} $JEV in epoch ${w.epoch}`} />;
+  return (
+    <SharePage
+      image={`/api/card/win/${epoch}/${addr}`}
+      alt={`Won ${tokens(w.amount)} $JEV in epoch ${w.epoch}`}
+      post={{ text: `I beat ${w.jev ? "Jev" : "the model"}: +${tokens(w.amount)} $JEV in epoch ${w.epoch}. @jevsaidit #jevsaidit`, path: `/w/${epoch}/${addr}` }}
+    />
+  );
 }

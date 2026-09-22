@@ -35,5 +35,13 @@ export default async function Page({ params }: P) {
   const c = await callCard(id);
   if (c === BLIND) return <SharePage image={BRAND_IMAGE} alt="Jev Said It" commitment={`/api/feed/q/${id}.json`} blind />;
   if (!c) notFound();
-  return <SharePage image={`/api/card/q/${id}`} alt={`${whoSaid(c.model)} said ${said(c.p)} on ${c.symbol}`} commitment={`/api/feed/q/${id}.json`} />;
+  const when = c.outcome === null ? `calls close ${new Date(c.deadline * 1000).toISOString().slice(11, 16)} utc` : "the price settled it";
+  return (
+    <SharePage
+      image={`/api/card/q/${id}`}
+      alt={`${whoSaid(c.model)} said ${said(c.p)} on ${c.symbol}`}
+      commitment={`/api/feed/q/${id}.json`}
+      post={{ text: `${whoSaid(c.model)} said ${said(c.p)} on ${c.symbol.replace(/^\$/, "")}. ${when}. $JEV @jevsaidit #jevsaidit`, path: `/q/${id}` }}
+    />
+  );
 }

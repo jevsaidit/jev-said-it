@@ -1296,7 +1296,9 @@ code,
 
 /* ---------- play ---------- */
 
+/* The panel is narrow even on a wide screen: it decides its layout by ITS width, not the window's. */
 .play {
+  container-type: inline-size;
   border: 1px solid var(--line);
   background: var(--ink);
   padding: 1.25rem 1.1rem;
@@ -1355,7 +1357,9 @@ code,
 }
 .play__q {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  /* 7ch so a ticker is never squeezed to nothing: the panel sits in a column, and with the picks in the
+     same row the 1fr collapsed to 28px on a desktop (22/09/2026). */
+  grid-template-columns: minmax(7ch, 1fr) auto auto auto;
   gap: 0.75rem;
   align-items: center;
   min-height: 52px;
@@ -1645,4 +1649,15 @@ code,
   display: block;
   height: 100%;
   background: var(--hood);
+}
+
+/* Picks on their own row whenever the PANEL is narrow, whatever the screen size. */
+@container (max-width: 560px) {
+  .play__q {
+    grid-template-columns: minmax(7ch, 1fr) auto;
+  }
+  .play__pick {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
 }
