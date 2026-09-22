@@ -87,7 +87,7 @@ export default function Home() {
           </a>
           {/* Before the section links in the DOM: on a phone it sits next to the brand, and the tab order follows the eye. */}
           <a className="btn btn--ghost nav__follow" href={LINKS.x} rel="noopener" target="_blank" aria-label="Follow on X">
-            <span className="nav__follow-long">Follow on </span>X
+            <span className="nav__follow-long">Follow on&nbsp;</span>X
           </a>
           <WalletButton />
           <nav aria-label="Sections">

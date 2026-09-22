@@ -135,6 +135,14 @@ check "$(curl -s -o $LOG/win.png -w '%{http_code} %{content_type}' $W/api/card/w
 check "$(curl -s -o /dev/null -w '%{http_code}' $W/api/card/win/0/$U2) $(curl -s -o /dev/null -w '%{http_code}' $W/w/0/$U2)" "404 404" "no card and no page for a reward that was not published"
 [ "$(echo "$R" | jq -r '.error // empty')" ] && echo "   error: $(echo "$R" | jq -r .error) | $(echo "$R" | jq -r .panel)"
 
+echo "4. two wallets installed, Phantom holding window.ethereum: the header asks, remembers, recovers"
+R=$(node $HERE/wallets.e2e.mjs $W)
+check "$(echo "$R" | jq -r '.picker | join(",")')" "Phantom,MetaMask" "both wallets are offered"
+check "$(echo "$R" | jq -r .afterPick)" "0x1111…2222" "MetaMask connected and on Robinhood Chain"
+check "$(echo "$R" | jq -r .phantomCalls)" 0 "Phantom was never called"
+check "$(echo "$R" | jq -r .stored)" io.metamask "the pick is remembered"
+check "$(echo "$R" | jq -r .phantomNote)" "Phantom can't use Robinhood Chain: pick another wallet" "Phantom's failure is named"
+check "$(echo "$R" | jq -r '.pickerAgain | join(",")')" "Phantom,MetaMask" "after it, the wallets are offered again"
 echo; echo "$ok passed, $ko failed"
 [ -n "${KEEP_SHOTS:-}" ] && cp $LOG/*.png "$KEEP_SHOTS"/ 2>/dev/null
 [ $ko -eq 0 ] || { echo "--- engine"; tail -8 $LOG/serve.log; echo "--- site"; tail -8 $LOG/site.log; }

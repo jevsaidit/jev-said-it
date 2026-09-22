@@ -1,44 +1,29 @@
 "use client";
 
 // The header's wallet button, live before launch too: it connects a browser wallet and puts it on
-// Robinhood Chain, so a holder is ready when calls open. No viem here (it stays in PlayLive): plain
-// EIP-1193 requests. Once connected, PlayLive finds the same account with eth_accounts, no second prompt.
-import { useEffect, useState } from "react";
+// Robinhood Chain, so a holder is ready when calls open. With several wallets installed it asks which
+// one (lib/wallets.ts); the play panel then uses the same one. No viem here: plain EIP-1193 requests.
+import { useEffect, useRef, useState } from "react";
 import { CHAIN } from "@/lib/site";
-
-type Eip1193 = {
-  request: (a: { method: string; params?: unknown[] }) => Promise<unknown>;
-  on?: (e: string, f: (...a: unknown[]) => void) => void;
-  removeListener?: (e: string, f: (...a: unknown[]) => void) => void;
-};
+import { cannotAddChain, pickWallet, useWallets, type Wallet } from "@/lib/wallets";
+import { WalletPicker } from "./WalletPicker";
 
 const HEX = `0x${CHAIN.id.toString(16)}`;
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 export function WalletButton() {
-  const [eth, setEth] = useState<Eip1193 | null | undefined>(undefined);
+  const { wallets, chosen } = useWallets();
   const [account, setAccount] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [note, setNote] = useState<string | null>(null);
-
-  // The wallet: injected at load, injected late (ethereum#initialized), or announced by EIP-6963.
-  useEffect(() => {
-    const w = window as unknown as { ethereum?: Eip1193 };
-    const found = (p: Eip1193 | undefined) => setEth((cur) => cur ?? p ?? null);
-    const onInit = () => found(w.ethereum);
-    const onAnnounce = (e: Event) => found((e as CustomEvent<{ provider?: Eip1193 }>).detail?.provider);
-    window.addEventListener("ethereum#initialized", onInit);
-    window.addEventListener("eip6963:announceProvider", onAnnounce);
-    window.dispatchEvent(new Event("eip6963:requestProvider"));
-    found(w.ethereum);
-    return () => {
-      window.removeEventListener("ethereum#initialized", onInit);
-      window.removeEventListener("eip6963:announceProvider", onAnnounce);
-    };
-  }, []);
+  const [menu, setMenu] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
 
   // An account authorized earlier shows up without a click; account and network changes are followed.
   useEffect(() => {
+    setAccount(null);
+    setChainId(null);
+    const eth = chosen?.provider;
     if (!eth) return;
     const onAcc = (a: unknown) => setAccount(Array.isArray(a) && typeof a[0] === "string" ? a[0] : null);
     const onChain = (c: unknown) => setChainId(typeof c === "string" ? Number(c) : null);
@@ -50,51 +35,95 @@ export function WalletButton() {
       eth.removeListener?.("accountsChanged", onAcc);
       eth.removeListener?.("chainChanged", onChain);
     };
-  }, [eth]);
+  }, [chosen]);
+
+  // The menu closes on a click elsewhere or Escape.
+  useEffect(() => {
+    if (!menu) return;
+    const out = (e: MouseEvent) => box.current && !box.current.contains(e.target as Node) && setMenu(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMenu(false);
+    document.addEventListener("mousedown", out);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", out);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [menu]);
 
   const say = (m: string) => {
     setNote(m);
-    setTimeout(() => setNote(null), 4000);
+    setTimeout(() => setNote(null), 6000);
   };
 
-  const toChain = async (p: Eip1193) => {
+  const connect = async (w: Wallet) => {
+    setMenu(false);
+    const eth = w.provider;
     try {
-      await p.request({ method: "wallet_switchEthereumChain", params: [{ chainId: HEX }] });
-    } catch (e) {
-      // Only an unknown chain (4902) is added; a refusal is a refusal, not a second prompt.
-      if ((e as { code?: number }).code !== 4902) return;
-      await p.request({
-        method: "wallet_addEthereumChain",
-        params: [{ chainId: HEX, chainName: CHAIN.name, nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: [CHAIN.rpc], blockExplorerUrls: [CHAIN.explorer] }],
-      });
-    }
-    setChainId(Number(await p.request({ method: "eth_chainId" })));
-  };
-
-  const click = async () => {
-    if (!eth) return say("No browser wallet found");
-    try {
-      if (!account) {
-        const a = (await eth.request({ method: "eth_requestAccounts" })) as string[];
-        setAccount(a[0] ?? null);
-      }
-      await toChain(eth);
+      const a = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+      setAccount(a[0] ?? null);
     } catch {
-      say("Request refused");
+      return say("Request refused");
     }
+    try {
+      await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: HEX }] });
+    } catch (e) {
+      if (cannotAddChain(w)) {
+        // Forget it, so the next click offers the other wallets instead of trying this one again.
+        pickWallet(null);
+        return say(`${w.name} can't use ${CHAIN.name}: pick another wallet`);
+      }
+      // Only an unknown chain (4902) is added; a refusal is a refusal, not a second prompt.
+      if ((e as { code?: number }).code !== 4902) return say("Network switch refused");
+      try {
+        await eth.request({
+          method: "wallet_addEthereumChain",
+          params: [{ chainId: HEX, chainName: CHAIN.name, nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 }, rpcUrls: [CHAIN.rpc], blockExplorerUrls: [CHAIN.explorer] }],
+        });
+      } catch {
+        return say(`${w.name} did not add ${CHAIN.name}`);
+      }
+    }
+    setChainId(Number(await eth.request({ method: "eth_chainId" }).catch(() => null)));
+  };
+
+  const click = () => {
+    if (wallets.length === 0) return say("No browser wallet found");
+    if (!chosen || account) return setMenu((m) => !m);
+    void connect(chosen);
   };
 
   const ready = account && chainId === CHAIN.id;
   const label = note ?? (!account ? "Connect wallet" : chainId !== CHAIN.id ? `Switch to ${CHAIN.name}` : short(account));
-  if (ready && !note)
-    return (
-      <a className="btn nav__wallet" href="#play" title={`${account} on ${CHAIN.name}`}>
-        {label}
-      </a>
-    );
   return (
-    <button className="btn nav__wallet" type="button" onClick={click} aria-live="polite">
-      {label}
-    </button>
+    <div className="nav__wallet" ref={box}>
+      <button
+        className="btn"
+        type="button"
+        onClick={account && !ready ? () => chosen && connect(chosen) : click}
+        aria-expanded={menu}
+        aria-live="polite"
+        title={ready ? `${account} on ${CHAIN.name}` : undefined}
+      >
+        {label}
+      </button>
+      {menu && (
+        <div className="nav__menu">
+          {account && ready ? (
+            <>
+              <a href="#play" onClick={() => setMenu(false)}>
+                Play
+              </a>
+              {wallets.length > 1 && (
+                <button type="button" onClick={() => (pickWallet(null), setMenu(false))}>
+                  Use another wallet
+                </button>
+              )}
+            </>
+          ) : (
+            <WalletPicker wallets={wallets} onPick={(w) => void connect(w)} />
+          )}
+        </div>
+      )}
+    </div>
   );
 }

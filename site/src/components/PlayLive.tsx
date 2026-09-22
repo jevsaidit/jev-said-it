@@ -5,18 +5,15 @@ import { createPublicClient, createWalletClient, custom, type Abi, type Address,
 import { CHAINS, DISTRIBUTOR_ABI, LEDGER_ABI, REVERT_TEXT } from "@/lib/chains";
 import { isJev, said } from "@/lib/say";
 import { RULES } from "@/lib/site";
+import { cannotAddChain, useWallets } from "@/lib/wallets";
 import type { Config } from "./Play";
+import { WalletPicker } from "./WalletPicker";
 
 // The live play panel. It decides nothing: the CallLedger accepts or refuses a call, the engine counts
 // the balance at the epoch's start, the distributor checks the proof. The page only shows what
 // each of them will say before you pay gas to hear it.
 
 type Provider = EIP1193Provider & { on?: (e: string, f: (...a: unknown[]) => void) => void; removeListener?: (e: string, f: (...a: unknown[]) => void) => void };
-declare global {
-  interface Window {
-    ethereum?: Provider;
-  }
-}
 
 type Claim = { epoch: number; amount: string; proof: Hex[] };
 type Holder = { epoch: number; balanceAtStart: string | null; capacityAtStart: string | null; tokensPerCall: string; maxCallsPerEpoch: string; claims: Claim[] };
@@ -59,7 +56,6 @@ async function feed<T>(path: string): Promise<{ ok: true; data: T } | { ok: fals
 export function PlayLive({ ticker, cfg, chainId: wantId }: { ticker: string; cfg: Config; chainId: number }) {
   const T = `$${ticker}`;
   const chain = CHAINS[wantId]!;
-  const [provider, setProvider] = useState<Provider | null | undefined>(undefined);
   const [account, setAccount] = useState<Address | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [holder, setHolder] = useState<Holder | null>(null);
@@ -82,21 +78,12 @@ export function PlayLive({ ticker, cfg, chainId: wantId }: { ticker: string; cfg
   const accountRef = useRef<Address | null>(null);
   accountRef.current = account;
 
-  // The wallet: injected at load, injected late (ethereum#initialized), or announced by EIP-6963.
+  // The wallet: the one picked in lib/wallets.ts (EIP-6963 or window.ethereum), shared with the header.
+  const { wallets, chosen: wallet } = useWallets();
+  const provider: Provider | null | undefined = wallet === undefined ? undefined : ((wallet?.provider as Provider | undefined) ?? null);
   useEffect(() => {
-    const found = (p: Provider | undefined) => setProvider((cur) => cur ?? p ?? null);
-    found(window.ethereum);
-    const onInit = () => found(window.ethereum);
-    const onAnnounce = (e: Event) => found((e as CustomEvent<{ provider?: Provider }>).detail?.provider);
-    window.addEventListener("ethereum#initialized", onInit);
-    window.addEventListener("eip6963:announceProvider", onAnnounce);
-    window.dispatchEvent(new Event("eip6963:requestProvider"));
     const t = setInterval(() => setTick(Math.floor(Date.now() / 1000)), 30_000);
-    return () => {
-      window.removeEventListener("ethereum#initialized", onInit);
-      window.removeEventListener("eip6963:announceProvider", onAnnounce);
-      clearInterval(t);
-    };
+    return () => clearInterval(t);
   }, []);
 
   // A different wallet or network makes every pick, receipt and pending state meaningless.
@@ -300,6 +287,13 @@ export function PlayLive({ ticker, cfg, chainId: wantId }: { ticker: string; cfg
 
   let body: ReactNode;
   if (provider === undefined) body = <p className="play__note">Looking for a wallet.</p>;
+  else if (provider === null && wallets.length > 1)
+    body = (
+      <>
+        <p className="play__note">Several wallets are installed. Pick the one to play with{cannotAddChain(wallets.find((w) => w.provider.isPhantom)) ? ` (Phantom can't use ${chain.name})` : ""}:</p>
+        <WalletPicker wallets={wallets} />
+      </>
+    );
   else if (provider === null)
     body = (
       <>

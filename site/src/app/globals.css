@@ -240,10 +240,76 @@ code,
 .nav__follow {
   order: 3;
   margin-left: auto;
+  gap: 0; /* "Follow on " and "X" are two flex items: the button's gap would double the space */
 }
 .nav__wallet {
   order: 4;
+  position: relative;
   white-space: nowrap;
+}
+.nav__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  width: max-content;
+  min-width: 220px;
+  max-width: calc(100vw - 32px);
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  background: var(--felt);
+  box-shadow: 0 0 0 var(--px) var(--felt-2), var(--px) calc(var(--px) * 2) 0 0 var(--shadow);
+}
+.nav__menu > a,
+.nav__menu > button {
+  display: block;
+  padding: 0.6em 0.8em;
+  min-height: 44px;
+  text-align: left;
+  font: inherit;
+  color: var(--mint);
+  background: none;
+  border: 0;
+  text-decoration: none;
+  cursor: pointer;
+}
+.nav__menu > a:hover,
+.nav__menu > button:hover {
+  background: var(--felt-2);
+}
+.walletpick {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.walletpick__item {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5em 0.8em;
+  font: inherit;
+  color: var(--mint);
+  background: var(--felt-2);
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.walletpick__item:hover,
+.walletpick__item:focus-visible {
+  outline: var(--px) solid var(--hood);
+}
+.walletpick__item img {
+  border-radius: 4px;
+}
+.walletpick__dot {
+  width: 22px;
+  height: 22px;
+  background: var(--hood);
 }
 /* A phone has room for the brand and two buttons only if the follow button is just "X". */
 @media (max-width: 520px) {
