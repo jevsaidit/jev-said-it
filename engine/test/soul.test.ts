@@ -22,6 +22,14 @@ describe("render", () => {
     { kind: "swap", key: "swap:0x5b", ethIn: "400000000000000000", burned: "12345678000000000000000000", tx: "0x5b1e" + "0".repeat(60) },
     { kind: "pin", key: "pin:v1" },
   ];
+
+  // 22/09/2026: X answered 403 "Posts are limited to a maximum of one cashtag" to a post with two.
+  it("every X post has at most one cashtag", () => {
+    for (const e of events) {
+      const x = render(e, site).x;
+      if (x) expect((x.match(/\$[A-Za-z][A-Za-z0-9_]*/g) ?? []).length, x).toBeLessThanOrEqual(1);
+    }
+  });
   it("every post ends with the signature and passes its own guard", () => {
     for (const e of events) {
       const r = render(e, site);
@@ -71,3 +79,4 @@ describe("guard", () => {
     expect(guard(`$JEV to the moon, 100x\n\n${SIGNATURE}`, f).ok).toBe(false);
   });
 });
+

@@ -8,7 +8,8 @@ export const SIGNATURE = "jev said it.\n#jevsaidit";
 const EXPLORER = "https://robinhoodchain.blockscout.com";
 
 /** Numbers the templates may contain on their own: constants of the contracts, nothing else. */
-export const CONSTANTS = ["10k", "500k", "1 call", "50", "6h", "12h"] as const;
+// The play rule from epoch 1 (22/09/2026): hold 1M, one call per 100k, 50 from 5M.
+export const CONSTANTS = ["100k", "5M", "1 call", "50", "6h", "12h", "1M"] as const;
 
 export type Q = { id: string; token: string; symbol: string | null; p: string; outcome: string | null };
 export type AnnounceEvent =
@@ -136,7 +137,7 @@ export function render(e: AnnounceEvent, site: string): { telegram: string | nul
     case "pin": {
       const text = post(
         "hold $JEV, get calls.",
-        `${CONSTANTS[0]} = ${CONSTANTS[2]}. ${CONSTANTS[1]} = ${CONSTANTS[3]}.`,
+        `hold ${CONSTANTS[6]} to play. ${CONSTANTS[0]} = ${CONSTANTS[2]}. ${CONSTANTS[1]} = ${CONSTANTS[3]}.`,
         "be right, get paid from the fees.",
         "be wrong, lose nothing but pride.",
         "memes, not positions. nfa.",

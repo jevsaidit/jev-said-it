@@ -484,7 +484,8 @@ export function PlayLive({ ticker, cfg, chainId: wantId }: { ticker: string; cfg
           const up = x.p >= 0.5;
           const mine = x.agree === up ? "up" : "down";
           const who = isJev(x.model) ? "Jev" : `${x.model ?? "The model"} (fallback)`;
-          const text = `${who} said ${said(x.p)} on ${x.symbol}. I said ${mine}. ${T} @jevsaidit #jevsaidit`;
+          // X allows one cashtag per post: it is $JEV's, so the question's token goes without "$".
+          const text = `${who} said ${said(x.p)} on ${x.symbol.replace(/^\$/, "")}. I said ${mine}. ${T} @jevsaidit #jevsaidit`;
           return (
             <li key={x.id}>
               <span>
