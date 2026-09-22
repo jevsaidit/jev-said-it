@@ -64,6 +64,12 @@ try {
     await page.waitForFunction(() => document.querySelectorAll(".play__done").length > 0, null, { timeout: 20_000 });
     out.after = await text();
     out.share = await page.locator(".play__share a").evaluateAll((as) => as.map((a) => a.href));
+    // A reload forgets the page's memory: the share step must come back from the ledger's events.
+    await page.reload({ waitUntil: "load" });
+    const again = page.locator("#play").getByRole("button", { name: "Connect wallet" });
+    if (await again.count()) await again.click();
+    await page.locator(".play__share a").first().waitFor({ timeout: 20_000 }).catch(() => {});
+    out.shareAfterReload = await page.locator(".play__share a").evaluateAll((as) => as.map((a) => a.href));
   }
   if (step === "late") {
     out.submitDisabled = await page.locator(".play > .btn").isDisabled();

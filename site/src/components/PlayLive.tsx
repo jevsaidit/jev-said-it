@@ -16,7 +16,7 @@ import { WalletPicker } from "./WalletPicker";
 type Provider = EIP1193Provider & { on?: (e: string, f: (...a: unknown[]) => void) => void; removeListener?: (e: string, f: (...a: unknown[]) => void) => void };
 
 type Claim = { epoch: number; amount: string; proof: Hex[] };
-type Holder = { epoch: number; balanceAtStart: string | null; capacityAtStart: string | null; tokensPerCall: string; maxCallsPerEpoch: string; claims: Claim[] };
+type Holder = { epoch: number; startBlock?: string; balanceAtStart: string | null; capacityAtStart: string | null; tokensPerCall: string; maxCallsPerEpoch: string; claims: Claim[] };
 type Question = { id: Hex; epoch?: number; symbol?: string | null; token?: string; p?: string; model?: string; deadline?: number; status?: string };
 type ClaimState = Claim & { claimed: boolean; voided: boolean; opensAt: number; expiresAt: number };
 type Tx = { kind: "idle" } | { kind: "wallet" } | { kind: "pending"; hash: Hex } | { kind: "done"; hash: Hex } | { kind: "error"; msg: string; hash?: Hex };
@@ -68,6 +68,8 @@ export function PlayLive({ ticker, cfg, chainId: wantId }: { ticker: string; cfg
   const [picks, setPicks] = useState<Record<string, boolean>>({});
   const [tx, setTx] = useState<Tx>({ kind: "idle" });
   const [shared, setShared] = useState<Shared[]>([]);
+  // Calls already on the ledger this epoch, read back from CallSubmitted: the share step survives a reload.
+  const [past, setPast] = useState<Shared[]>([]);
   const [tick, setTick] = useState(() => Math.floor(Date.now() / 1000));
   // The contract judges deadlines and claim windows by the chain's clock, not this computer's.
   const [skew, setSkew] = useState(0);
@@ -90,6 +92,7 @@ export function PlayLive({ ticker, cfg, chainId: wantId }: { ticker: string; cfg
   const reset = () => {
     setPicks({});
     setShared([]);
+    setPast([]);
     setTx({ kind: "idle" });
     setHolder(null);
     setClaims([]);
@@ -151,6 +154,21 @@ export function PlayLive({ ticker, cfg, chainId: wantId }: { ticker: string; cfg
     setUsed(u);
     setCapNow(c);
     setAnswered(Object.fromEntries(open.map((q, i) => [q.id, ans[i] as boolean])));
+    const done = open.filter((_, i) => ans[i]);
+    if (done.length > 0 && h.ok) {
+      // The side of a call is only in the event, not in the ledger's storage. Filtered by epoch and caller,
+      // one epoch of logs is a single cheap query.
+      const logs = await pub
+        .getContractEvents({ address: cfg.callLedger, abi: LEDGER_ABI, eventName: "CallSubmitted", args: { epoch: ep, caller: account }, fromBlock: h.data.startBlock ? BigInt(h.data.startBlock) : head.number - 300_000n, toBlock: head.number })
+        .catch(() => []);
+      const side = new Map(logs.map((l) => [l.args.questionId?.toLowerCase(), l.args.agree]));
+      if (my !== seq.current) return;
+      setPast(
+        done
+          .filter((q) => side.get(q.id.toLowerCase()) !== undefined)
+          .map((q) => ({ kind: "call" as const, id: q.id, symbol: q.symbol ? `$${q.symbol}` : short(q.token ?? q.id), p: Number(q.p ?? 0), model: q.model, agree: side.get(q.id.toLowerCase())! })),
+      );
+    } else setPast([]);
     if (h.ok && cfg.rewardsDistributor && h.data.claims.length > 0) {
       const d = cfg.rewardsDistributor;
       const [delay, window] = await Promise.all([
@@ -432,11 +450,15 @@ export function PlayLive({ ticker, cfg, chainId: wantId }: { ticker: string; cfg
       </>
     );
 
-  const share = shared.length > 0 && (
+  const toShare = shared.length > 0 ? shared : past;
+  const share = toShare.length > 0 && (
     <div className="play__share">
-      <h3>{shared[0]!.kind === "win" ? "Post the receipt" : "Post your calls"}</h3>
+      <h3>{toShare[0]!.kind === "win" ? "Post the receipt" : "Post your calls on X"}</h3>
+      {toShare[0]!.kind === "call" && (
+        <p className="play__note">Each call has its own card, straight from the ledger. Post them: that is how the table fills up.</p>
+      )}
       <ul>
-        {shared.map((x) => {
+        {toShare.map((x, i) => {
           if (x.kind === "win") {
             const text = `I beat ${x.jev ? "Jev" : "the model"}: +${fmtTokens(x.amount)} ${T} in epoch ${x.epoch}. @jevsaidit #jevsaidit`;
             return (
@@ -453,13 +475,13 @@ export function PlayLive({ ticker, cfg, chainId: wantId }: { ticker: string; cfg
           const up = x.p >= 0.5;
           const mine = x.agree === up ? "up" : "down";
           const who = isJev(x.model) ? "Jev" : `${x.model ?? "The model"} (fallback)`;
-          const text = `${who} said ${said(x.p)} on ${x.symbol}. I said ${mine}. @jevsaidit #jevsaidit`;
+          const text = `${who} said ${said(x.p)} on ${x.symbol}. I said ${mine}. ${T} @jevsaidit #jevsaidit`;
           return (
             <li key={x.id}>
               <span>
                 {x.symbol}: you said {mine}
               </span>
-              <a className="btn btn--ghost" href={postUrl(text, `/c/${x.id}/${x.agree ? "agree" : "disagree"}`)} target="_blank" rel="noopener">
+              <a className={i === 0 ? "btn" : "btn btn--ghost"} href={postUrl(text, `/c/${x.id}/${x.agree ? "agree" : "disagree"}`)} target="_blank" rel="noopener">
                 Post on X
               </a>
             </li>

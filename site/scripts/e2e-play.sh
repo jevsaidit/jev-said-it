@@ -94,6 +94,8 @@ has "$(echo "$R" | jq -r .after)" "7 of 10" "the panel updates to 7 calls left"
 has "$(echo "$R" | jq -r .after)" "answered" "answered questions are marked"
 echo "   share: the receipt of each call"
 check "$(echo "$R" | jq -r '.share | length')" 3 "one 'Post on X' per call"
+check "$(echo "$R" | jq -r '.shareAfterReload | length')" 3 "after a reload, the three 'Post on X' come back from CallSubmitted"
+has "$(echo "$R" | jq -r '.share[0]')" "%24JEV" "the post carries the \$JEV cashtag"
 SH=$(echo "$R" | jq -r '.share[0]'); URL=$(node -e "console.log(new URL(process.argv[1]).searchParams.get('url'))" "$SH")
 has "$SH" "x.com/intent/post" "the button opens X's composer"
 has "$(node -e "console.log(new URL(process.argv[1]).searchParams.get('text'))" "$SH")" "@jevsaidit #jevsaidit" "the post tags @jevsaidit and #jevsaidit"

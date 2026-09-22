@@ -44,6 +44,17 @@ export const LEDGER_ABI = [
   { type: "function", name: "answered", stateMutability: "view", inputs: [{ type: "uint256" }, { type: "address" }, { type: "bytes32" }], outputs: [{ type: "bool" }] },
   { type: "function", name: "capacity", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
   { type: "function", name: "currentEpoch", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  {
+    type: "event",
+    name: "CallSubmitted",
+    inputs: [
+      { name: "epoch", type: "uint256", indexed: true },
+      { name: "caller", type: "address", indexed: true },
+      { name: "questionId", type: "bytes32", indexed: true },
+      { name: "agree", type: "bool", indexed: false },
+      { name: "balanceAtCall", type: "uint256", indexed: false },
+    ],
+  },
   err("NotAuthorized"),
   err("LengthMismatch"),
   err("QuestionClosed"),
