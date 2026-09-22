@@ -1459,7 +1459,8 @@ rehearsal: the engine refuses a database that belongs to another ledger and woul
    `V4_START_BLOCK` = head − 1,700,000, `MODEL=none`, no `CALL_LEDGER`. The PoolManager index needs
    25-40 minutes to reach the head: started at T0 it would make the first epoch late.
 2. **T+5, after DeployCore (§4.6).** Set `TOKEN=$JEVSAID_TOKEN`, `LAUNCH_BLOCK` (§4.4),
-   `CALL_LEDGER`, `KEEPER_PK`, **`LEDGER_START_BLOCK` = the block of the Timelock transaction** — the
+   `CALL_LEDGER`, `KEEPER_PK`, (**not** `LEDGER_START_BLOCK`: it is rewards config, `loadRewardsConfig`, and goes
+   with step 3 — note its value now:) **`LEDGER_START_BLOCK` = the block of the Timelock transaction** — the
    first of the twelve, read from `broadcast/DeployCore.s.sol/4663/run-latest.json` (the twelve span
    several 0.1-second blocks; the `CallLedger` is the fourth, so its own block would also work, only
    because no question can exist before `CALL_LEDGER` is set — take the first and do not reason about
