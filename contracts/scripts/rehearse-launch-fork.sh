@@ -33,7 +33,9 @@ st() { cast send "$@" --rpc-url $A --json 2>/dev/null | jq -r .status; }
 fund() { cast rpc anvil_setBalance $1 0x56BC75E2D63100000 --rpc-url $A >/dev/null; }   # 100 ETH
 # Three states, not two: a dead RPC or a cast argument error gives an empty status, and reading that as
 # "reverted" would let a negative assertion pass on a tool failure.
-rv() { local r; r=$(st "$@"); case "$r" in 0x1) echo "went through";; 0x0) echo reverted;; *) echo "not measured";; esac; }
+# A fixed gas limit skips estimation: without it a call that reverts is refused by cast before it is sent,
+# no receipt exists, and every negative assertion read "not measured" (seen on 22/09/2026).
+rv() { local r; r=$(st "$@" --gas-limit 1000000); case "$r" in 0x1) echo "went through";; 0x0) echo reverted;; *) echo "not measured";; esac; }
 warp() { cast rpc evm_increaseTime $1 --rpc-url $A >/dev/null; cast rpc evm_mine --rpc-url $A >/dev/null; }
 
 DEPLOYER_PK=$(cast wallet new --json | jq -r '(.data // .) | if type=="array" then .[0] else . end | .private_key'); DEPLOYER=$(ad $DEPLOYER_PK)

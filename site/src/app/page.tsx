@@ -448,11 +448,6 @@ skill = (b − y)² − brier`}</div>
                   X @jevsaidit
                 </a>
               </li>
-              <li>
-                <a href={LINKS.xBot} rel="noopener" target="_blank">
-                  Bot @jevsaidit_bot
-                </a>
-              </li>
               {LINKS.telegram && (
                 <li>
                   <a href={LINKS.telegram} rel="noopener" target="_blank">

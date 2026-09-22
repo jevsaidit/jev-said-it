@@ -14,7 +14,6 @@ export const TIMELOCK_ADDRESS = env(process.env.NEXT_PUBLIC_TIMELOCK_ADDRESS);
 
 export const LINKS = {
   x: "https://x.com/jevsaidit",
-  xBot: "https://x.com/jevsaidit_bot",
   github: "https://github.com/jevsaidit",
   telegram: env(process.env.NEXT_PUBLIC_TELEGRAM_URL),
   explorer: "https://robinhoodchain.blockscout.com",

@@ -2,7 +2,7 @@
 
 Chain: **Robinhood Chain, id 4663**. Testnet: **46630**.
 Identity: name **Jev Said It**, ticker **$JEV**, domain **jevsaidit.com**
-(defensive **jevsaidit.fun**, **jevsaidit.xyz**), X handle **@jevsaidit**, engine **@jevsaidit_bot**.
+(defensive **jevsaidit.fun**, **jevsaidit.xyz**), X handle **@jevsaidit** (the engine posts from it, labeled automated; since 22/09 there is no separate X bot account), Telegram bot **@jevsaidit_bot**.
 
 This document is read on launch day, with real money at stake. Every step has:
 the exact command, **what to note down** from its output, **what to verify** before moving to the
@@ -219,8 +219,8 @@ that cannot be recovered: that is why the two checks that can say "no" are due a
       proven and the launch stops.
 - [ ] `docs/addresses.md` reread today, with the §0 constants re-verified.
 - [ ] Legal opinion received.
-- [ ] Domains `jevsaidit.com` / `.fun` / `.xyz` registered and served; X handles `@jevsaidit` and
-      `@jevsaidit_bot` active.
+- [ ] Domains `jevsaidit.com` / `.fun` / `.xyz` registered and served; X handle `@jevsaidit` active,
+      bio with `$JEV`, website `https://www.jevsaidit.com`; `engine/scripts/check-announcer.ts` exits 0.
 - [ ] Engine (Plan 2) **running on Railway from T-1h** (§5.0 step 1), with the mainnet `KEEPER_PK`
       loaded and **`SCORER_PK` NOT loaded until §5.0 step 3** (the first root is checked by hand
       first), **and with the `Transfer` indexer ready to start from the launch block** (§5.7).

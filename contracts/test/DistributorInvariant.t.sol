@@ -64,8 +64,19 @@ contract DistHandler is Test {
     function claim(uint256 idx) external {
         if (epochs.length == 0) return;
         uint256 e = epochs[idx % epochs.length];
-        // Half the time jump to the opening of the claim window, so that a claim that can succeed
-        // is tried in every run and the counter below means something.
+        // Half the time aim at an epoch that can still pay (latest one not voided, not yet claimed,
+        // window open) and jump to the opening of its claim window. Picking at random, voids and
+        // sweeps closed most epochs first: ~4 claims per 500 calls, and one run in a few hundred
+        // had none, which failed afterInvariant on 22/09/2026 with the contracts unchanged.
+        if (idx % 2 == 1) {
+            for (uint256 i = epochs.length; i > 0; i--) {
+                uint256 c = epochs[i - 1];
+                if (!dist.epochVoided(c) && !dist.hasClaimed(c, winnerOf[c]) && block.timestamp < dist.epochSetAt(c) + dist.CLAIM_WINDOW()) {
+                    e = c;
+                    break;
+                }
+            }
+        }
         uint256 setAt = dist.epochSetAt(e);
         if (idx % 2 == 1 && setAt != 0 && block.timestamp < setAt + dist.CLAIM_DELAY()) vm.warp(setAt + dist.CLAIM_DELAY());
         vm.prank(winnerOf[e]);
