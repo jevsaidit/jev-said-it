@@ -146,9 +146,11 @@ export default function Home() {
                 <a className="btn" href="#receipts">
                   Check a receipt
                 </a>
-                <a className="btn btn--ghost" href={LINKS.github} rel="noopener" target="_blank">
-                  Read the code
-                </a>
+                {TOKEN_ADDRESS && (
+                  <a className="btn btn--ghost" href={LINKS.github} rel="noopener" target="_blank">
+                    Read the code
+                  </a>
+                )}
               </div>
 
               {TOKEN_ADDRESS ? (
@@ -314,6 +316,16 @@ skill = (b − y)² − brier`}</div>
                 Every split is a line of Solidity.
               </h2>
               <p>
+                <strong>The token.</strong> 1,000,000,000 {T}, all of it sold on the Pons bonding curve: no presale,
+                no team allocation, no vesting. When the curve fills, it graduates into a Uniswap v4 pool. The dev
+                wallet bought {DEV.share ?? "about 2% of the supply"} in the launch transaction and holds it; it never
+                takes rewards.
+              </p>
+              <p>
+                Every swap pays Pons 1%. About 0.70% of the volume comes back as creator fees, and the creator is a
+                contract, not a person: the fees can only go down the split on the right.
+              </p>
+              <p>
                 Creator fees from Pons arrive at the FeeRouter in ETH. Anyone can call{" "}
                 <code>distribute()</code>. The keeper then buys {T} with the swap share, burns part of
                 it and sends the rest to the rewards distributor.
@@ -457,11 +469,13 @@ skill = (b − y)² − brier`}</div>
                   </a>
                 </li>
               )}
-              <li>
-                <a href={LINKS.github} rel="noopener" target="_blank">
-                  GitHub
-                </a>
-              </li>
+              {TOKEN_ADDRESS && (
+                <li>
+                  <a href={LINKS.github} rel="noopener" target="_blank">
+                    GitHub
+                  </a>
+                </li>
+              )}
             </ul>
           </div>
         </div>
