@@ -66,7 +66,7 @@ export const RULES = {
 export const FEE_SPLIT = [
   { key: "rewards", bps: 5000, label: "Rewards", note: `buys $${TICKER}, sent to the rewards distributor`, tone: "hood" },
   { key: "burn", bps: 1500, label: "Burn", note: `buys $${TICKER}, sent to 0x…dEaD`, tone: "gold" },
-  { key: "team", bps: 2000, label: "Team", note: "paid in ETH, withdrawable only by the published team wallet", tone: "mint" },
+  { key: "team", bps: 2000, label: "Team", note: "paid in ETH, withdrawable only by the FeeRouter's teamWallet(), readable on-chain", tone: "mint" },
   { key: "ops", bps: 1000, label: "Ops", note: "RPC, indexer, hosting", tone: "felt" },
   { key: "compute", bps: 500, label: "Compute", note: "model calls", tone: "coral" },
 ] as const;
