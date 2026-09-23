@@ -87,8 +87,31 @@ export async function claimFor(db: Db, epoch: number, account: string) {
  * resolved questions. It is published even when the model loses: it is the number that makes
  * everything else credible.
  */
+/**
+ * Brier per epoch and overall, for the model, the 0.5 baseline in every receipt, and hindsight: the best
+ * CONSTANT forecast, i.e. always the observed share of ups, which nobody could know in advance. Beating 0.5
+ * is easy when most tokens go down (41 of the first 60 did); hindsight is the harder bar, and it is printed
+ * next to the model's number so the reader can see which one it clears. Pure: recomputable from the receipts.
+ */
+export function brierTable(rows: Array<{ epoch: number; p: string; baseline: string; outcome: "0" | "1" }>) {
+  const agg = (rs: typeof rows) => {
+    let m = 0n;
+    let b = 0n;
+    for (const x of rs) {
+      const y = x.outcome === "1" ? P_SCALE : 0n;
+      m += (parseProb(x.p) - y) ** 2n;
+      b += (parseProb(x.baseline) - y) ** 2n;
+    }
+    const n = rs.length;
+    const up = rs.filter((x) => x.outcome === "1").length / (n || 1);
+    return { resolved: n, brierModel: n ? Number(m) / n / 1e8 : null, brierBaseline: n ? Number(b) / n / 1e8 : null, brierHindsight: n ? up * (1 - up) : null };
+  };
+  const epochs = [...new Set(rows.map((x) => x.epoch))].sort((a, b) => a - b);
+  return { ...agg(rows), byEpoch: epochs.map((epoch) => ({ epoch, ...agg(rows.filter((x) => x.epoch === epoch)) })) };
+}
+
 export async function calibration(db: Db) {
-  const r = await db.query<{ json: string; outcome: string }>("SELECT json, outcome FROM questions WHERE status = 'OPEN' AND outcome IN ('0','1')");
+  const r = await db.query<{ epoch: number; json: string; outcome: string }>("SELECT epoch, json, outcome FROM questions WHERE status = 'OPEN' AND outcome IN ('0','1')");
   let model = 0n;
   let base = 0n;
   const byModel = new Map<string, number>();
@@ -102,7 +125,14 @@ export async function calibration(db: Db) {
   const n = r.rows.length;
   const mean = (s: bigint) => (n === 0 ? null : Number(s) / n / 1e8);
   const counts = await db.query<{ outcome: string | null; n: string }>("SELECT outcome, count(*) n FROM questions WHERE status = 'OPEN' GROUP BY outcome");
+  const table = brierTable(r.rows.map((x) => {
+    const j = JSON.parse(x.json) as { p: string; baseline: string };
+    return { epoch: x.epoch, p: j.p, baseline: j.baseline, outcome: x.outcome as "0" | "1" };
+  }));
   return {
+    brierHindsight: table.brierHindsight,
+    modelBeatsHindsight: n === 0 ? null : (mean(model) ?? 1) < (table.brierHindsight ?? 0),
+    byEpoch: table.byEpoch,
     resolved: n,
     brierModel: mean(model),
     brierBaseline: mean(base),

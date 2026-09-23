@@ -11,6 +11,10 @@ type Cal = {
   brierModel: number | null;
   brierBaseline: number | null;
   modelBeatsBaseline: boolean | null;
+  // the best constant forecast, known only afterwards (always the observed share of ups): the harder bar
+  brierHindsight?: number | null;
+  modelBeatsHindsight?: boolean | null;
+  byEpoch?: Array<{ epoch: number; resolved: number; brierModel: number | null; brierBaseline: number | null; brierHindsight: number | null }>;
   outcomes: Record<string, number>;
   note: string | null;
 };
@@ -55,7 +59,49 @@ export function Record() {
           Brier score, lower is better: <strong>{n3(c.brierModel ?? 0)}</strong> for the model against{" "}
           <strong>{n3(c.brierBaseline ?? 0)}</strong> for the baseline —{" "}
           {c.modelBeatsBaseline ? "the model is ahead" : "the baseline is ahead, and it stays printed here"}.
+          {c.brierHindsight != null && (
+            <>
+              {" "}
+              The harder bar: always guessing the share of ups that actually happened ({up} of {up + down}), which
+              nobody knew in advance, scores <strong>{n3(c.brierHindsight)}</strong> —{" "}
+              {c.modelBeatsHindsight ? "the model beats that too" : "and that one is ahead of the model"}.
+            </>
+          )}
         </p>
+      )}
+      {c.byEpoch && c.byEpoch.length > 0 && (
+        <>
+          <table className="record__table">
+            <thead>
+              <tr>
+                <th>epoch</th>
+                <th>n</th>
+                <th>Jev</th>
+                <th>0.5</th>
+                <th>hindsight</th>
+              </tr>
+            </thead>
+            <tbody>
+              {c.byEpoch.map((e) => (
+                <tr key={e.epoch}>
+                  <td>
+                    <a href={`/e/${e.epoch}`}>{e.epoch}</a>
+                  </td>
+                  <td>{e.resolved}</td>
+                  <td className={e.brierModel != null && e.brierHindsight != null && e.brierModel > e.brierHindsight ? "unpaid" : ""}>
+                    {e.brierModel == null ? "—" : n3(e.brierModel)}
+                  </td>
+                  <td>{e.brierBaseline == null ? "—" : n3(e.brierBaseline)}</td>
+                  <td>{e.brierHindsight == null ? "—" : n3(e.brierHindsight)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="muted">
+            Brier per epoch, lower is better. One epoch is too few questions to mean much on its own; the losing ones stay in
+            the table.
+          </p>
+        </>
       )}
     </div>
   );

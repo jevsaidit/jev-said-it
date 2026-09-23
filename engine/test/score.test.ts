@@ -148,3 +148,21 @@ describe("rank by skill per call, from epoch 2 (Captain, 23/09/2026)", () => {
     expect(allocate([w("0xa", 800n, 16n), w("0xb", 48n, 16n)], 1000n, 1)[0]!.amount).toBe(943n); // epoch 1: by the sum
   });
 });
+
+import { brierTable } from "../src/server/feed.js";
+describe("brierTable: Jev's record, per epoch and against hindsight", () => {
+  const r = (epoch: number, p: string, outcome: "0" | "1") => ({ epoch, p, baseline: "0.5000", outcome });
+  it("per epoch: the model, the 0.5 baseline, and the best constant guess known only afterwards", () => {
+    // epoch 0: p 0.2 on a down (0.04), p 0.2 on a down (0.04), p 0.6 on an up (0.16), p 0.3 on a down (0.09)
+    const t = brierTable([r(0, "0.2000", "0"), r(0, "0.2000", "0"), r(0, "0.6000", "1"), r(0, "0.3000", "0"), r(1, "0.9000", "0")]);
+    const e0 = t.byEpoch.find((e) => e.epoch === 0)!;
+    expect(e0.resolved).toBe(4);
+    expect(e0.brierModel).toBeCloseTo(0.0825, 10);
+    expect(e0.brierBaseline).toBe(0.25);
+    expect(e0.brierHindsight).toBeCloseTo(0.25 * 0.75, 10); // 1 up in 4: always 0.25
+    const e1 = t.byEpoch.find((e) => e.epoch === 1)!;
+    expect(e1.brierModel).toBeCloseTo(0.81, 10); // a loss stays printed
+    expect(e1.brierHindsight).toBe(0);
+    expect(t.brierHindsight).toBeCloseTo(0.2 * 0.8, 10); // 1 up in 5 overall
+  });
+});

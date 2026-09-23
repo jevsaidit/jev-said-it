@@ -1583,6 +1583,28 @@ code,
   margin: 0.3rem 0;
   font-size: 0.9rem;
 }
+.record__table {
+  width: 100%;
+  max-width: 28rem;
+  margin: 0.8rem 0 0.2rem;
+  border-collapse: collapse;
+  font-family: var(--font-data);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+.record__table th,
+.record__table td {
+  padding: 0.2rem 0 0.2rem 0.4rem;
+  text-align: right;
+}
+.record__table th:first-child,
+.record__table td:first-child {
+  text-align: left;
+}
+.record__table th {
+  font-weight: 400;
+  opacity: 0.7;
+}
 
 /* ---------- start box: the step the page was missing, where to buy ---------- */
 .start {
