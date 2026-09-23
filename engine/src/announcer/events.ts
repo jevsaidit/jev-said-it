@@ -1,5 +1,5 @@
 import type { Db } from "../db/db.js";
-import type { AnnounceEvent, Q } from "./soul.js";
+import type { AnnounceEvent, Q, Unpaid } from "./soul.js";
 
 type QRow = { id: string; epoch: number; deadline: string; tx_hash: string; token: string; symbol: string | null; json: string; outcome: string | null };
 
@@ -29,6 +29,14 @@ const CLOSING_WINDOW_SEC = 30 * 60;
 const RECENT_SEC = 2 * 24 * 3600;
 
 /** Everything announceable right now, each with a stable key and the channels it is meant for. */
+/** Why a NOT_PAYABLE epoch pays nobody, from the reason closeEpoch stored (score/epoch.ts, score/score.ts). */
+export function unpaidOf(reason: string | null, players: number): Unpaid {
+  if (players === 0) return "nobody";
+  if (reason?.includes("no free balance")) return "empty";
+  if (reason?.includes("unresolvable")) return "unresolvable";
+  return "none_beat";
+}
+
 export async function collectEvents(db: Db, now: number): Promise<Array<{ event: AnnounceEvent; channels: Array<"telegram" | "x"> }>> {
   const out: Array<{ event: AnnounceEvent; channels: Array<"telegram" | "x"> }> = [];
   const qs = (await db.query<QRow>("SELECT id, epoch, deadline, tx_hash, token, symbol, json, outcome FROM questions WHERE status = 'OPEN' AND deadline > $1 ORDER BY deadline, id", [now - RECENT_SEC])).rows;
@@ -56,17 +64,19 @@ export async function collectEvents(db: Db, now: number): Promise<Array<{ event:
   // Settled epochs: the ones with a root on-chain, and the ones declared not payable (no winner,
   // too many unresolvable questions, empty distributor). The second kind is news too: "nobody beat
   // the baseline" is a sentence the voice has, and an epoch that vanishes silently looks hidden.
-  const eps = (await db.query<{ epoch: number; state: string; payload: string; published_at: Date | null; closed_at: Date | null }>(
-    `SELECT epoch, state, payload, published_at, closed_at FROM epochs
+  const eps = (await db.query<{ epoch: number; state: string; reason: string | null; payload: string; published_at: Date | null; closed_at: Date | null }>(
+    `SELECT epoch, state, reason, payload, published_at, closed_at FROM epochs
       WHERE (state = 'PUBLISHED' AND published_at > now() - interval '2 days')
          OR (state = 'NOT_PAYABLE' AND closed_at > now() - interval '2 days')
       ORDER BY epoch`,
   )).rows;
   for (const e of eps) {
-    const p = JSON.parse(e.payload) as { claims?: Array<{ account: string; amount: string }> };
+    const p = JSON.parse(e.payload) as { claims?: Array<{ account: string; amount: string }>; wallets?: Array<{ callsValid: number; score: string }> };
+    const played = (p.wallets ?? []).filter((w) => w.callsValid > 0);
+    const beat = played.filter((w) => BigInt(w.score) > 0n).length;
     const claims = e.state === "PUBLISHED" ? [...(p.claims ?? [])].sort((a, b) => (BigInt(b.amount) > BigInt(a.amount) ? 1 : -1)) : [];
     const claimsAt = e.state === "PUBLISHED" && e.published_at ? Math.floor(e.published_at.getTime() / 1000) + CLAIM_DELAY_SEC : null;
-    out.push({ event: { kind: "epoch_settled", key: `settled:${e.epoch}`, epoch: e.epoch, winners: claims.length, top: claims[0]?.account ?? null, claimsAt }, channels: ["telegram", "x"] });
+    out.push({ event: { kind: "epoch_settled", key: `settled:${e.epoch}`, epoch: e.epoch, winners: claims.length, top: claims[0]?.account ?? null, claimsAt, players: played.length, beat, unpaid: e.state === "NOT_PAYABLE" ? unpaidOf(e.reason, played.length) : null }, channels: ["telegram", "x"] });
     if (claimsAt && now >= claimsAt) out.push({ event: { kind: "claims_open", key: `claims:${e.epoch}`, epoch: e.epoch }, channels: ["telegram"] });
   }
   const swaps = (await db.query<{ tx_hash: string; detail: string }>("SELECT tx_hash, detail FROM treasury_ops WHERE kind = 'SWAP' AND tx_hash IS NOT NULL AND at > now() - interval '2 days' ORDER BY id")).rows;

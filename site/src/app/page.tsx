@@ -143,7 +143,8 @@ export default function Home() {
               </h1>
               <p className="lede">
                 A model commits to a probability on-chain before anyone answers. You agree or disagree.
-                When the price settles, the best-calibrated calls get paid in {T} from trading fees.
+                When the price settles, the best-calibrated calls get paid in {T} from trading fees. The reward pool
+                is filled by buybacks, and those start when {T} graduates the Pons curve.
               </p>
 
               <div className="hero__actions">

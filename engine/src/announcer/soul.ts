@@ -11,12 +11,14 @@ const EXPLORER = "https://robinhoodchain.blockscout.com";
 // The play rule from epoch 1 (22/09/2026): hold 1M, one call per 100k, 50 from 5M.
 export const CONSTANTS = ["100k", "5M", "1 call", "50", "6h", "12h", "1M"] as const;
 
+export type Unpaid = "empty" | "nobody" | "none_beat" | "unresolvable";
 export type Q = { id: string; token: string; symbol: string | null; p: string; outcome: string | null };
 export type AnnounceEvent =
   | { kind: "batch_opened"; key: string; epoch: number; deadline: number; questions: Q[] }
   | { kind: "closing_soon"; key: string; epoch: number; deadline: number; count: number }
   | { kind: "outcome"; key: string; question: Q }
-  | { kind: "epoch_settled"; key: string; epoch: number; winners: number; top: string | null; claimsAt: number | null }
+  // players = wallets with a counted call; beat = those above the baseline; unpaid = why a NOT_PAYABLE epoch pays nobody.
+  | { kind: "epoch_settled"; key: string; epoch: number; winners: number; top: string | null; claimsAt: number | null; players: number; beat: number; unpaid: Unpaid | null }
   | { kind: "claims_open"; key: string; epoch: number }
   | { kind: "swap"; key: string; ethIn: string; burned: string; tx: string }
   | { kind: "pin"; key: string };
@@ -115,6 +117,18 @@ export function render(e: AnnounceEvent, site: string): { telegram: string | nul
       return { telegram: text, x: text, fmt: f };
     }
     case "epoch_settled": {
+      // Not paid is not the same as nobody won: with an empty distributor (before $JEV graduates the
+      // curve) every epoch closes NOT_PAYABLE, including the ones where wallets did beat the baseline.
+      if (e.unpaid) {
+        const beat = e.beat > 0 ? `${f.int(e.beat)} of ${f.int(e.players)} wallets out-called the baseline.` : "nobody beat the baseline.";
+        const why =
+          e.unpaid === "empty" ? [beat, "no payout: the reward pool fills from buybacks, and they start when $JEV graduates the curve."]
+          : e.unpaid === "nobody" ? ["no holder called it."]
+          : e.unpaid === "unresolvable" ? ["too many questions could not be settled. when in doubt, nothing is paid."]
+          : ["nobody beat the baseline. not even me."];
+        const text = post(`epoch ${f.int(e.epoch)} is done.`, ...why, e.players > 0 ? `scores: ${site}/e/${e.epoch}` : "");
+        return { telegram: text, x: text, fmt: f };
+      }
       const lines = [
         `epoch ${f.int(e.epoch)} is done.`,
         e.winners > 0 ? `${f.int(e.winners)} wallets out-called the baseline.` : "nobody beat the baseline. not even me.",

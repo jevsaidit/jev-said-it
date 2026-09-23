@@ -278,7 +278,9 @@ export function PlayLive({ ticker, cfg, chainId: wantId }: { ticker: string; cfg
   // Held something at the epoch's start, but less than the minimum: not the "bought too late" case.
   const below = holder?.balanceAtStart != null && BigInt(holder.balanceAtStart) > 0n && BigInt(holder.balanceAtStart) < minHold;
   // What will actually be scored: the contract enforces the balance now, the engine the balance at start.
-  const counted = capNow === null ? null : capStart === null ? capNow : capStart < capNow ? capStart : capNow;
+  // An unknown start balance counts as zero: the contract still accepts 1 call per 10,000 while the
+  // engine scores nothing under 1M, so trusting capNow here let a 500k wallet send 50 calls to be dropped.
+  const counted = capNow === null ? null : capStart === null ? 0n : capStart < capNow ? capStart : capNow;
   const left = counted !== null && used !== null ? (counted > used ? counted - used : 0n) : null;
   // A question in its last minute stays on screen as "closing", with its buttons off: a call sent in
   // its last seconds may land after the deadline, and a row that vanishes explains nothing.
@@ -370,11 +372,12 @@ export function PlayLive({ ticker, cfg, chainId: wantId }: { ticker: string; cfg
         )}
         {capNow !== null && capNow > 0n && capStart === 0n && !below && (
           <p className="play__note play__note--warn">
-            You bought after this epoch started. Calls sent now would be dropped at scoring, so they are disabled. You play from the next epoch.
+            You bought after this epoch started. Calls sent now would be dropped at scoring, so they are disabled. Hold at least{" "}
+            {fmtTokens(minHold)} {T} when the next epoch starts to play it.
           </p>
         )}
         {capStart === null && capNow !== null && capNow > 0n && (
-          <p className="play__note">Your balance at epoch start isn&apos;t indexed yet. Only calls within it will count.</p>
+          <p className="play__note">Your balance at epoch start isn&apos;t readable yet, so calls are off until it is: try again in a minute.</p>
         )}
 
         {shownQs.length === 0 ? (

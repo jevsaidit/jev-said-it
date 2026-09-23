@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BLIND } from "@/lib/cards";
-import { epochView, isHit } from "@/lib/epoch";
+import { epochView, isHit, scoreboard } from "@/lib/epoch";
 import { said, whoSaid } from "@/lib/say";
-import { SITE_URL, TICKER } from "@/lib/site";
+import { LINKS, SITE_URL, TICKER } from "@/lib/site";
 
 type P = { params: Promise<{ n: string }> };
 export const dynamic = "force-dynamic";
@@ -32,7 +32,9 @@ export default async function Page({ params }: P) {
       </main>
     );
   if (!e) notFound();
+  const board = await scoreboard(e.epoch);
   const T = `$${TICKER}`;
+  const pts = (x: bigint) => (Number(x) / 1e8).toFixed(3);
   const text = e.resolved > 0 ? `${describe(e)} every probability was on-chain before anyone answered. ${T} @jevsaidit #jevsaidit` : `Epoch ${e.epoch} is open. ${T} @jevsaidit #jevsaidit`;
   return (
     <main id="main" className="wrap section epoch">
@@ -40,7 +42,8 @@ export default async function Page({ params }: P) {
       <p className="lede">
         {e.resolved > 0 ? (
           <>
-            Jev got <strong>{e.hits}</strong> of <strong>{e.resolved}</strong> resolved questions.
+            Jev got <strong>{e.hits}</strong> of <strong>{e.resolved}</strong> resolved questions. Always saying &ldquo;{e.majoritySide}&rdquo;
+            would have got {e.majority}.
           </>
         ) : (
           <>No question of this epoch has resolved yet.</>
@@ -62,6 +65,34 @@ export default async function Page({ params }: P) {
           </li>
         ))}
       </ul>
+      <h2>Scoreboard</h2>
+      {board === BLIND ? (
+        <p className="muted">The engine didn&apos;t answer, so the scores can&apos;t be read right now.</p>
+      ) : board === null ? (
+        <p className="muted">Scored once every question of the epoch has settled.</p>
+      ) : board.wallets.length === 0 ? (
+        <p className="muted">No holder called this epoch.</p>
+      ) : (
+        <>
+          <p className="muted">
+            Brier skill against the baseline, summed over each wallet&apos;s counted calls.
+            {board.state === "PUBLISHED" ? "" : " Nothing was paid for this epoch."}
+          </p>
+          <ol className="epoch__qs">
+            {board.wallets.map((w) => (
+              <li key={w.address}>
+                <a href={`${LINKS.explorer}/address/${w.address}`} rel="noopener" target="_blank">
+                  {w.address.slice(0, 6)}…{w.address.slice(-4)}
+                </a>
+                <span className="epoch__p">
+                  {pts(BigInt(w.score))} over {w.callsResolved} call{w.callsResolved === 1 ? "" : "s"}
+                </span>
+                <span className={BigInt(w.score) > 0n ? "paid" : "unpaid"}>{BigInt(w.score) > 0n ? "beat it" : "didn't"}</span>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
       <div className="share__actions">
         <a className="btn" href={`https://x.com/intent/post?${new URLSearchParams({ text, url: `${SITE_URL}/e/${e.epoch}` })}`} rel="noopener" target="_blank">
           Post it on X

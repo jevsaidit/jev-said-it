@@ -17,7 +17,11 @@ describe("render", () => {
     { kind: "closing_soon", key: "closing:0xa", epoch: 42, deadline: 1790019311, count: 10 },
     { kind: "outcome", key: "outcome:0x1", question: q({ outcome: "1" }) },
     { kind: "outcome", key: "outcome:0x2", question: q({ outcome: "0" }) },
-    { kind: "epoch_settled", key: "settled:41", epoch: 41, winners: 3, top: "0x7a3f00000000000000000000000000000000fc21", claimsAt: 1790050000 },
+    { kind: "epoch_settled", key: "settled:41", epoch: 41, winners: 3, top: "0x7a3f00000000000000000000000000000000fc21", claimsAt: 1790050000, players: 5, beat: 3, unpaid: null },
+    { kind: "epoch_settled", key: "settled:43", epoch: 43, winners: 0, top: null, claimsAt: null, players: 4, beat: 2, unpaid: "empty" },
+    { kind: "epoch_settled", key: "settled:44", epoch: 44, winners: 0, top: null, claimsAt: null, players: 0, beat: 0, unpaid: "nobody" },
+    { kind: "epoch_settled", key: "settled:45", epoch: 45, winners: 0, top: null, claimsAt: null, players: 3, beat: 0, unpaid: "none_beat" },
+    { kind: "epoch_settled", key: "settled:46", epoch: 46, winners: 0, top: null, claimsAt: null, players: 3, beat: 1, unpaid: "unresolvable" },
     { kind: "claims_open", key: "claims:41", epoch: 41 },
     { kind: "swap", key: "swap:0x5b", ethIn: "400000000000000000", burned: "12345678000000000000000000", tx: "0x5b1e" + "0".repeat(60) },
     { kind: "pin", key: "pin:v1" },
@@ -58,7 +62,21 @@ describe("render", () => {
   });
   it("$JEV appears only in posts about the token", () => {
     expect(render(events[0]!, site).telegram).not.toContain("$JEV");
-    expect(render(events[6]!, site).telegram).toContain("$JEV");
+    expect(render(events.find((e) => e.kind === "swap")!, site).telegram).toContain("$JEV");
+  });
+  // 23/09/2026: epochs 0 and 1 closed NOT_PAYABLE (only the excluded dev wallet had called) and went out
+  // as "nobody beat the baseline. not even me." With an empty distributor every epoch closes
+  // NOT_PAYABLE, so that sentence would have been said of epochs where wallets DID beat it.
+  it("an unpaid epoch says why, and never that nobody beat the baseline when someone did", () => {
+    const t = (key: string) => render(events.find((e) => e.key === key)!, site).telegram!;
+    expect(t("settled:43")).not.toMatch(/nobody beat/);
+    expect(t("settled:43")).toMatch(/out-called the baseline/);
+    expect(t("settled:43")).toMatch(/graduat/);
+    expect(t("settled:43")).not.toMatch(/claims open/);
+    expect(t("settled:44")).not.toMatch(/nobody beat|not even me/);
+    expect(t("settled:44")).toMatch(/no holder called/);
+    expect(t("settled:45")).toMatch(/nobody beat the baseline/);
+    expect(t("settled:46")).toMatch(/could not be settled/);
   });
 });
 

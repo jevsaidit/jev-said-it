@@ -12,7 +12,7 @@ Not affiliated with TypeSafe AI.
   the index as context;
 - block 4: outcome resolution, scores, Merkle root and `setEpochRoot`;
 - treasury: collects the Pons escrow and runs one buyback per epoch (`src/treasury/`), proven on a mainnet fork (`scripts/e2e-treasury-fork.sh`, 11/11);
-- announcer: the game's public voice on Telegram (and later X), in the degen voice of the pfp; every post is refused if it holds a number that is not in the data (`src/announcer/`, `ANNOUNCE_MODE=test` sends everything to one private chat);
+- announcer: the game's public voice on Telegram and X, in the degen voice of the pfp; every post is refused if it holds a number that is not in the data; X has a daily cap with slots reserved for the epoch verdict and the buyback, so an opening at dawn cannot silence the verdict at night (`src/announcer/`, `ANNOUNCE_MODE=test` sends everything to one private chat; X signs with OAuth 1.0a, checked against X's documented test vector);
 - block 5: the service (`serve`), i.e. loop, `/health`, public feed, Dockerfile and `railway.json`.
 
 The model is Jev via the TypeSafe API (`MODEL=jev`). The placeholder model (`MODEL=stub`) exists only
@@ -153,6 +153,29 @@ Two defects found by this test, both in the test and not in the engine, but inst
   the ports are free before starting;
 - with the 2h window the loop **legitimately** opens several batches per epoch on the same tokens. A
   test looking for "the question on token X" finds two.
+
+## Third review (22/09/2026) — what changed in the service
+
+- **Transactions leave in two halves** (`src/chain/send.ts`): signed locally, hash stored in the
+  database, THEN broadcast. A send that throws after the broadcast (viem retrying a slow
+  `eth_sendRawTransaction`, "already known") used to be recorded as never sent, and the batch was
+  reopened. Now only a failed simulation means "not sent"; everything else is settled from the chain.
+- **One writer at a time**: a Postgres advisory lock on a dedicated session. During a Railway deploy
+  the old and the new container overlap for a minute; the one without the lock indexes and serves,
+  and sends nothing (`/health` shows `writer: STANDBY`).
+- A batch already sent is settled from its receipt even while the index is behind; nothing new is
+  opened until it catches up.
+- The model loop has a time budget (`MODEL_BUDGET_MS`): a slow Jev no longer holds the loop long
+  enough to trip the engine's own blindness exit.
+- An epoch that ends before the distributor holds any token **waits two epochs** for the first
+  buyback before it is declared not payable; a `NOT_PAYABLE` epoch is announced ("nobody beat the
+  baseline"); an epoch the guardian voided on-chain becomes `VOIDED` here: its proofs are not served
+  and its claims are not announced.
+- A ticker is printed only if it looks like one (`SYMBOL_RE`): whoever launches a token chooses its
+  `symbol()`, and the announcer would have posted it verbatim.
+- Old swaps are pruned (`PRUNE_KEEP_BLOCKS`); a Telegram/X request that gets no answer is recorded
+  `unknown` and never retried (a retry could post twice); `/epochs/current` answers 502 when the
+  chain cannot be read, never 500 and never an empty list.
 
 ## Chain constraints, already built in
 

@@ -10,7 +10,7 @@ Palette = the site's (`site/README.md`, Design).
 | `pfp-1000.png` | high-resolution avatar; it is also `site/public/mascot.png` |
 | `mascot-1000-transparent.png` | the mascot without background, for posts and memes |
 | `banner-1500x500.png` | X header |
-| `site/public/brand/og-1200x630.png` | link preview (Open Graph / X card) |
+| `site/public/brand/og-jev-1200x630.png` | link preview (Open Graph / X card): the **degen** banner, 1200x400 nearest, pasted at y=115 on `#091a0f` — not `banner.py`'s own `og-jev-1200x630.png`, which is a different design |
 
 Regenerate:
 

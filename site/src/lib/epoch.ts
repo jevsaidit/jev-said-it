@@ -4,10 +4,14 @@ import { BLIND, engine, type Blind } from "@/lib/cards";
 // each receipt. A hit is the side the probability was on, not a rounded opinion.
 
 export type EpochQ = { id: string; symbol: string | null; token?: string; p: string; outcome: string | null; model?: string };
-export type EpochView = { epoch: number; questions: EpochQ[]; resolved: number; hits: number; voided: number; unresolvable: number; open: number };
+// majority = how many a model that always named the more frequent direction would have got: the
+// number "Jev got X of Y" has to be read against (on 23/09, 23 of epoch 0's 30 went down).
+export type EpochView = { epoch: number; questions: EpochQ[]; resolved: number; hits: number; majority: number; majoritySide: "up" | "down"; voided: number; unresolvable: number; open: number };
 
 export const isHit = (p: string, outcome: string | null) =>
   outcome === "1" || outcome === "0" ? (Number(p) >= 0.5) === (outcome === "1") : false;
+
+const ups = (qs: EpochQ[]) => qs.filter((q) => q.outcome === "1").length;
 
 export async function epochView(n: string): Promise<EpochView | null | Blind> {
   if (!/^\d{1,6}$/.test(n)) return null;
@@ -21,8 +25,22 @@ export async function epochView(n: string): Promise<EpochView | null | Blind> {
     questions: qs,
     resolved: decided.length,
     hits: decided.filter((q) => isHit(q.p, q.outcome)).length,
+    majority: Math.max(ups(decided), decided.length - ups(decided)),
+    majoritySide: ups(decided) * 2 > decided.length ? "up" : "down",
     voided: qs.filter((q) => q.outcome === "VOID").length,
     unresolvable: qs.filter((q) => q.outcome === "UNRESOLVABLE").length,
     open: qs.filter((q) => q.outcome === null).length,
   };
+}
+
+// The epoch's scoreboard, as stored by the engine when it closed the epoch (payload.wallets): only
+// wallets that are not excluded, scored on their counted calls. null = not closed yet.
+export type ScoredWallet = { address: string; callsOnChain: number; callsValid: number; callsResolved: number; score: string };
+export type Scoreboard = { state: string; wallets: ScoredWallet[]; rewards: Array<{ account: string; amount: string }> };
+
+export async function scoreboard(n: number): Promise<Scoreboard | null | Blind> {
+  const b = await engine<Scoreboard>(`/leaderboard/${n}`);
+  if (b === BLIND || b === null) return b;
+  const wallets = [...(b.wallets ?? [])].sort((x, y) => (BigInt(y.score) > BigInt(x.score) ? 1 : BigInt(y.score) < BigInt(x.score) ? -1 : 0));
+  return { state: b.state, wallets, rewards: b.rewards ?? [] };
 }
