@@ -82,8 +82,8 @@ describe("scoreEpoch", () => {
 
 describe("allocate", () => {
   it("splits proportionally and never exceeds the budget", () => {
-    const w = (address: string, score: bigint) => ({ address, score, callsOnChain: 0, callsValid: 0, callsResolved: 3 });
-    const out = allocate([w("0xa", 64n), w("0xb", 8n)], 1000n);
+    const w = (address: string, score: bigint) => ({ address, score, perCall: score / 3n, callsOnChain: 0, callsValid: 0, callsResolved: 3 });
+    const out = allocate([w("0xa", 64n), w("0xb", 8n)], 1000n, 0);
     expect(out).toEqual([{ address: "0xa", amount: 888n }, { address: "0xb", amount: 111n }]);
     expect(out.reduce((s, x) => s + x.amount, 0n)).toBeLessThanOrEqual(1000n);
   });
@@ -109,5 +109,42 @@ describe("the stricter rule from epoch 1 (22/09/2026)", () => {
     const w = new Map(out.wallets.map((x) => [x.address, x]));
     expect(w.get("0xsmall")!.callsValid).toBe(0);
     expect(w.get("0xbig")!.callsValid).toBe(3);
+  });
+});
+
+describe("rank by skill per call, from epoch 2 (Captain, 23/09/2026)", () => {
+  const E = 10n ** 18n;
+  // Four questions, all p=0.7 vs baseline 0.5: a right agreement is +0.16, a wrong one -0.24.
+  const qs = [q("a", "1"), q("b", "1"), q("c", "1"), q("d", "1"), q("e", "0")];
+  const base = { questions: qs, excluded: new Set<string>(), reference: "baseline" as const, topFraction: 1 };
+  // "whale": 5 calls, 4 right and 1 wrong -> sum 0.40, 0.08 per call. "sharp": 3 calls, all right -> sum 0.48,
+  // 0.16 per call. In epoch 1 the whale's 4 right calls (sum 0.64) beat the sharp's 0.48.
+  const whale = ["a", "b", "c", "d"].map((x) => call("0xwhale", x, true)).concat([call("0xwhale", "e", true)]);
+  const sharp = ["a", "b", "c"].map((x) => call("0xsharp", x, true));
+  const bal = new Map([["0xwhale", 5_000_000n * E], ["0xsharp", 1_000_000n * E]]);
+
+  it("epoch 1 still ranks by the sum: the wallet with more calls comes first", () => {
+    const four = ["a", "b", "c", "d"].map((x) => call("0xwhale", x, true));
+    const out = scoreEpoch({ ...base, epoch: 1, calls: [...four, ...sharp], balanceAtStart: bal });
+    expect(out.wallets.map((w) => w.address)).toEqual(["0xwhale", "0xsharp"]); // 0.64 > 0.48
+  });
+  it("from epoch 2 the average per call decides, not the number of calls", () => {
+    const out = scoreEpoch({ ...base, epoch: 2, calls: [...whale, ...sharp], balanceAtStart: bal });
+    const w = new Map(out.wallets.map((x) => [x.address, x]));
+    expect(w.get("0xwhale")!.score).toBe(40_000_000n); // 4 x 0.16 - 0.24
+    expect(w.get("0xwhale")!.perCall).toBe(8_000_000n);
+    expect(w.get("0xsharp")!.perCall).toBe(16_000_000n);
+    expect(out.wallets.map((x) => x.address)).toEqual(["0xsharp", "0xwhale"]);
+  });
+  it("the minimum of 3 resolved calls still applies to the average", () => {
+    const two = ["a", "b"].map((x) => call("0xlucky", x, true));
+    const out = scoreEpoch({ ...base, epoch: 2, calls: [...two, ...whale], balanceAtStart: new Map([...bal, ["0xlucky", 1_000_000n * E]]) });
+    expect(out.state === "PAYABLE" && out.winners.map((x) => x.address)).toEqual(["0xwhale"]);
+  });
+  it("from epoch 2 the budget is split by the average, so size does not buy a bigger share", () => {
+    const w = (address: string, score: bigint, perCall: bigint) => ({ address, score, perCall, callsOnChain: 0, callsValid: 0, callsResolved: 3 });
+    const out = allocate([w("0xa", 800n, 16n), w("0xb", 48n, 16n)], 1000n, 2);
+    expect(out).toEqual([{ address: "0xa", amount: 500n }, { address: "0xb", amount: 500n }]);
+    expect(allocate([w("0xa", 800n, 16n), w("0xb", 48n, 16n)], 1000n, 1)[0]!.amount).toBe(943n); // epoch 1: by the sum
   });
 });

@@ -32,7 +32,7 @@ const EPOCH = [
   {
     t: "end of epoch e+1",
     h: "Score",
-    p: `Brier skill against the committed baseline. The top ${RULES.paidTopPercent}% with a positive score and at least ${RULES.minResolvedCalls} resolved calls get paid.`,
+    p: `Brier skill against the committed baseline, averaged over each wallet's resolved calls: more calls don't rank you higher, better ones do. The top ${RULES.paidTopPercent}% with a positive average and at least ${RULES.minResolvedCalls} resolved calls get paid, in proportion to it.`,
   },
   {
     t: "after scoring",

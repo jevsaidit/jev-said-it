@@ -28,6 +28,12 @@ export function capacityAt(epoch: number, balance: bigint): bigint {
   const c = balance / r.tokensPerCall;
   return c > r.maxCalls ? r.maxCalls : c;
 }
+// Captain's decision of 23/09/2026, in force FROM EPOCH 2 (the first epoch not yet closed; nobody but the
+// excluded dev wallet had called in epochs 0-3): wallets are ranked, and the budget split, by the AVERAGE
+// skill per resolved call, not the sum. With the sum, 50 calls at a small edge beat 3 excellent ones: the
+// ranking measured the balance (capacity) more than the forecasting. Epochs 0 and 1 keep the sum.
+export const RULE_V3_FROM_EPOCH = 2;
+export const rankBy = (epoch: number): "sum" | "perCall" => (epoch >= RULE_V3_FROM_EPOCH ? "perCall" : "sum");
 export const MIN_RESOLVED_CALLS = 3;
 export const MAX_UNRESOLVABLE_SHARE = 0.2; // spec §6: above it, the epoch is not paid
 
@@ -52,6 +58,7 @@ export interface WalletScore {
   callsValid: number;
   callsResolved: number;
   score: bigint; // sum of skills, scale 10^8
+  perCall: bigint; // score / callsResolved, rounded toward zero (0 with no resolved call), scale 10^8
 }
 
 export type EpochScore =
@@ -107,22 +114,28 @@ export function scoreEpoch(i: {
       score += callSkill(q.p, c.agree, q.outcome === "1" ? 1n : 0n, ref);
       resolved++;
     }
-    wallets.push({ address, callsOnChain: list.length, callsValid: valid.length, callsResolved: resolved, score });
+    wallets.push({ address, callsOnChain: list.length, callsValid: valid.length, callsResolved: resolved, score, perCall: resolved ? score / BigInt(resolved) : 0n });
   }
-  wallets.sort((a, b) => (a.score === b.score ? (a.address < b.address ? -1 : 1) : a.score > b.score ? -1 : 1));
+  const key = (w: WalletScore) => (rankBy(i.epoch) === "perCall" ? w.perCall : w.score);
+  // Ties: the other measure, then the address, so the order is the same for anyone recomputing it.
+  const other = (w: WalletScore) => (rankBy(i.epoch) === "perCall" ? w.score : w.perCall);
+  wallets.sort((a, b) =>
+    key(a) !== key(b) ? (key(a) > key(b) ? -1 : 1) : other(a) !== other(b) ? (other(a) > other(b) ? -1 : 1) : a.address < b.address ? -1 : 1,
+  );
 
   if (i.questions.length > 0 && unresolvable / i.questions.length > MAX_UNRESOLVABLE_SHARE) {
     return { state: "NOT_PAYABLE", reason: `${unresolvable}/${i.questions.length} questions unresolvable: when in doubt, nothing is paid`, wallets };
   }
   const eligible = wallets.filter((w) => w.callsResolved >= MIN_RESOLVED_CALLS);
   const k = Math.max(1, Math.ceil(eligible.length * i.topFraction));
-  const winners = eligible.slice(0, k).filter((w) => w.score > 0n);
+  const winners = eligible.slice(0, k).filter((w) => key(w) > 0n);
   if (winners.length === 0) return { state: "NOT_PAYABLE", reason: "no forecaster with a positive score", wallets };
   return { state: "PAYABLE", wallets, winners };
 }
 
-/** Budget split in proportion to score, rounded down: the sum NEVER exceeds the budget. */
-export function allocate(winners: WalletScore[], budget: bigint): Array<{ address: string; amount: bigint }> {
-  const total = winners.reduce((s, w) => s + w.score, 0n);
-  return winners.map((w) => ({ address: w.address, amount: (budget * w.score) / total })).filter((x) => x.amount > 0n);
+/** Budget split in proportion to the epoch's ranking measure, rounded down: the sum NEVER exceeds the budget. */
+export function allocate(winners: WalletScore[], budget: bigint, epoch: number): Array<{ address: string; amount: bigint }> {
+  const w8 = (w: WalletScore) => (rankBy(epoch) === "perCall" ? w.perCall : w.score);
+  const total = winners.reduce((s, w) => s + w8(w), 0n);
+  return winners.map((w) => ({ address: w.address, amount: (budget * w8(w)) / total })).filter((x) => x.amount > 0n);
 }

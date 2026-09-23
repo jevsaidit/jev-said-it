@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BLIND } from "@/lib/cards";
-import { epochView, isHit, scoreboard } from "@/lib/epoch";
+import { epochView, isHit, PER_CALL_FROM_EPOCH, perCallOf, scoreboard } from "@/lib/epoch";
 import { said, whoSaid } from "@/lib/say";
 import { LINKS, SITE_URL, TICKER } from "@/lib/site";
 
@@ -75,7 +75,9 @@ export default async function Page({ params }: P) {
       ) : (
         <>
           <p className="muted">
-            Brier skill against the baseline, summed over each wallet&apos;s counted calls.
+            {e.epoch >= PER_CALL_FROM_EPOCH
+              ? "Brier skill against the baseline, per resolved call: ranked by the average, not by how many calls."
+              : "Brier skill against the baseline, summed over each wallet's counted calls (the rule until epoch 1)."}
             {board.state === "PUBLISHED" ? "" : " Nothing was paid for this epoch."}
           </p>
           <ol className="epoch__qs">
@@ -85,7 +87,8 @@ export default async function Page({ params }: P) {
                   {w.address.slice(0, 6)}…{w.address.slice(-4)}
                 </a>
                 <span className="epoch__p">
-                  {pts(BigInt(w.score))} over {w.callsResolved} call{w.callsResolved === 1 ? "" : "s"}
+                  {e.epoch >= PER_CALL_FROM_EPOCH ? `${pts(perCallOf(w))} per call` : pts(BigInt(w.score))} over {w.callsResolved} call
+                  {w.callsResolved === 1 ? "" : "s"}
                 </span>
                 <span className={BigInt(w.score) > 0n ? "paid" : "unpaid"}>{BigInt(w.score) > 0n ? "beat it" : "didn't"}</span>
               </li>

@@ -35,12 +35,17 @@ export async function epochView(n: string): Promise<EpochView | null | Blind> {
 
 // The epoch's scoreboard, as stored by the engine when it closed the epoch (payload.wallets): only
 // wallets that are not excluded, scored on their counted calls. null = not closed yet.
-export type ScoredWallet = { address: string; callsOnChain: number; callsValid: number; callsResolved: number; score: string };
+export type ScoredWallet = { address: string; callsOnChain: number; callsValid: number; callsResolved: number; score: string; perCall?: string };
+// engine/src/score/score.ts RULE_V3_FROM_EPOCH: from epoch 2 wallets are ranked by skill per call, before by the sum.
+export const PER_CALL_FROM_EPOCH = 2;
+export const perCallOf = (w: ScoredWallet) => (w.perCall != null ? BigInt(w.perCall) : w.callsResolved ? BigInt(w.score) / BigInt(w.callsResolved) : 0n);
 export type Scoreboard = { state: string; wallets: ScoredWallet[]; rewards: Array<{ account: string; amount: string }> };
 
 export async function scoreboard(n: number): Promise<Scoreboard | null | Blind> {
   const b = await engine<Scoreboard>(`/leaderboard/${n}`);
   if (b === BLIND || b === null) return b;
-  const wallets = [...(b.wallets ?? [])].sort((x, y) => (BigInt(y.score) > BigInt(x.score) ? 1 : BigInt(y.score) < BigInt(x.score) ? -1 : 0));
+  // The engine already stores them in ranking order; sorted again by the same measure so the page never disagrees.
+  const m = (w: ScoredWallet) => (n >= PER_CALL_FROM_EPOCH ? perCallOf(w) : BigInt(w.score));
+  const wallets = [...(b.wallets ?? [])].sort((x, y) => (m(y) > m(x) ? 1 : m(y) < m(x) ? -1 : 0));
   return { state: b.state, wallets, rewards: b.rewards ?? [] };
 }

@@ -193,7 +193,7 @@ export async function closeEpoch(d: EpochDeps, epoch: number, publish: boolean):
     await store(db, epoch, "NOT_PAYABLE", "distributor has no free balance", null, null, base);
     return { state: "NOT_PAYABLE", reason: "distributor has no free balance" };
   }
-  const amounts = allocate(scored.winners, budget);
+  const amounts = allocate(scored.winners, budget, epoch);
   const leak = amounts.find((a) => excluded.has(a.address.toLowerCase()));
   if (leak) return { state: "FAILED", reason: `excluded address among the beneficiaries: ${leak.address}. The root is not published` };
   const total = amounts.reduce((s, a) => s + a.amount, 0n);

@@ -161,6 +161,13 @@ skill  = (b − y)² − brier           # b = the question's baseline, from the
 Wallet score in the epoch = sum of the `skill`s. At least 3 resolved calls are needed to enter
 the leaderboard. **Rewarded:** the top 10% with score > 0, in proportion to the score.
 
+**Changed from epoch 2 (decision of 23/09/2026, `RULE_V3_FROM_EPOCH` in `engine/src/score/score.ts`):**
+wallets are ranked, and paid, by the **average** skill per resolved call (`score / callsResolved`,
+rounded toward zero), not the sum. With the sum, 50 calls at a small edge beat 3 excellent ones, so the
+ranking measured the balance more than the forecasting. The 3-call minimum stays. Epochs 0 and 1 keep
+the sum. **Also from epoch 1** (22/09): at least 1,000,000 $JEV at the epoch's start, one call per 100,000,
+up to 50 (`capacityAt`); the contract still counts one per 10,000, and the engine drops the rest.
+
 ⚠️ **To be decided (§10.3):** against the baseline, whoever always agrees with the model earns
 the model's skill, in proportion to their balance. Against the model (`skill = brier_model − brier`),
 agreeing is always worth zero and only those who beat the model get paid. The first is more stable, the
