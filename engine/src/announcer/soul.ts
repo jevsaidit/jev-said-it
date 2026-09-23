@@ -1,4 +1,10 @@
 import { keccak256, stringToBytes } from "viem";
+import { forX } from "./x.js";
+
+// What a post will weigh on X, whichever side of the no-hex window it goes out on. X counts every link as
+// 23 characters (t.co), whatever its real length.
+const xWeight = (t: string) => t.replace(/https?:\/\/\S+/g, "x".repeat(23)).length;
+const forXLength = (t: string) => Math.max(xWeight(forX(t)), xWeight(forX(t, 0, 0)));
 
 // The voice of @jevsaidit: the degen of the pfp. Trusts Jev blindly, apes on it, never lies: every
 // post carries the receipt, and when Jev is wrong he says it first and laughs at himself hardest.
@@ -21,7 +27,10 @@ export type AnnounceEvent =
   | { kind: "epoch_settled"; key: string; epoch: number; winners: number; top: string | null; claimsAt: number | null; players: number; beat: number; unpaid: Unpaid | null }
   | { kind: "claims_open"; key: string; epoch: number }
   | { kind: "swap"; key: string; ethIn: string; burned: string; tx: string }
-  | { kind: "pin"; key: string };
+  | { kind: "pin"; key: string }
+  // B4: what shipped (subjects of a public showcase commit) and holders outside the team who played
+  | { kind: "dev_log"; key: string; sha: string; notes: string[] }
+  | { kind: "dev_milestone"; key: string; callers: number };
 
 /** Formats data into text and remembers every string it produced, for the guard. */
 export class Fmt {
@@ -32,6 +41,10 @@ export class Fmt {
   }
   p(p: string) {
     return this.keep(Number(p).toFixed(2));
+  }
+  /** A line quoted verbatim from a public, linked source (a commit subject): its numbers are not ours to invent. */
+  quote(s: string) {
+    return this.keep(s);
   }
   int(n: number) {
     return this.keep(String(n));
@@ -140,6 +153,24 @@ export function render(e: AnnounceEvent, site: string): { telegram: string | nul
     }
     case "claims_open":
       return { telegram: post(`epoch ${f.int(e.epoch)}: claims are open.`, "if you were right, go get paid."), x: null, fmt: f };
+    case "dev_log": {
+      // Plain voice, not the degen's: this is the builder saying what changed, with the diff one click away.
+      const link = `code: https://github.com/jevsaidit/jev-said-it/commit/${e.sha}`;
+      const lines: string[] = [];
+      for (const n of e.notes) {
+        const next = post("dev log. shipped:", ...lines, `· ${n}`, link);
+        if (forXLength(next) > 280) break;
+        lines.push(`· ${f.quote(n)}`);
+      }
+      if (lines.length === 0) return { telegram: null, x: null, fmt: f };
+      const text = post("dev log. shipped:", ...lines, link);
+      return { telegram: text, x: text, fmt: f };
+    }
+    case "dev_milestone": {
+      const head = e.callers === 1 ? "the first holder outside the team made a call." : `${f.int(e.callers)} holders outside the team have made a call.`;
+      const text = post(head, "jev said it first. now it's their word against his.", `play: ${site}/play`);
+      return { telegram: text, x: text, fmt: f };
+    }
     case "swap": {
       const text = post(
         "the fees came in.",

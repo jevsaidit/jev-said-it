@@ -45,6 +45,7 @@ admin allowed to post in the channel, sends one message to the test chat, and as
 (it must be @jevsaidit). It posts nothing in public. Exit 0 verified · 1 something to fix · 2 network.
 Without the chat ids it lists the chats the bot has seen, which is where the ids come from.
 | `X_DAILY_CAP` | `6` (default) | posts per UTC day on X. 2 slots are reserved for the epoch verdict and 1 for the buyback: a batch opening cannot exhaust the cap before the verdict |
+| `DEV_POSTS` | `draft` (default) · `x` · `off` | the dev voice (B4): what shipped, from the public showcase commits, and "N holders outside the team have made a call" (only with `EXCLUDE` set). `draft` sends the X text to `TELEGRAM_TEST_CHAT_ID` to be posted by hand; `x` posts it as the weakest kind, after the reserved slots. At most one dev post a day |
 
 All the others have a sensible default: see `.env.example`.
 

@@ -12,7 +12,7 @@ type Kind = AnnounceEvent["kind"];
  *  first served lets the weakest source (a batch opening at 06:00) spend the slots the strongest one
  *  (the epoch's verdict, at 18:00) will want, and the two never compete. So the strong kinds hold
  *  reserved slots: a weaker post goes out only if what is still owed to the stronger kinds fits. */
-const STRENGTH: Kind[] = ["epoch_settled", "swap", "outcome", "batch_opened", "closing_soon", "claims_open", "pin"];
+const STRENGTH: Kind[] = ["epoch_settled", "swap", "outcome", "batch_opened", "closing_soon", "claims_open", "pin", "dev_milestone", "dev_log"];
 export const X_RESERVED: Partial<Record<Kind, number>> = { epoch_settled: 2, swap: 1 };
 
 export function xAllowed(kind: Kind, sentToday: Partial<Record<Kind, number>>, cap: number): boolean {
@@ -26,17 +26,29 @@ export function xAllowed(kind: Kind, sentToday: Partial<Record<Kind, number>>, c
   return total + owed < cap;
 }
 
-const KEY_KIND: Record<string, Kind> = { open: "batch_opened", closing: "closing_soon", outcome: "outcome", settled: "epoch_settled", claims: "claims_open", swap: "swap", pin: "pin" };
+const KEY_KIND: Record<string, Kind> = { open: "batch_opened", closing: "closing_soon", outcome: "outcome", settled: "epoch_settled", claims: "claims_open", swap: "swap", pin: "pin", devlog: "dev_log", devmile: "dev_milestone" };
 export const kindOfKey = (key: string): Kind | undefined => KEY_KIND[key.split(":")[0]!];
 
 /** `events` overrides the collection: `announce-pin` posts the pinned explainer and nothing else. */
-export async function announce(db: Db, sender: Sender, o: { site: string; xDailyCap: number; now: number; events?: Collected }) {
+export async function announce(
+  db: Db,
+  sender: Sender,
+  o: { site: string; xDailyCap: number; now: number; events?: Collected; dev?: { mode: "off" | "draft" | "x"; excluded: string[] | null } },
+) {
   const report = { sent: 0, skipped: 0, failed: 0, refused: 0, capped: 0, unconfigured: 0 };
-  for (const { event, channels } of o.events ?? (await collectEvents(db, o.now))) {
+  for (const { event, channels } of o.events ?? (await collectEvents(db, o.now, o.dev))) {
     const r = render(event, o.site);
     for (const channel of channels as Channel[]) {
-      const text = channel === "x" ? r.x : r.telegram;
+      const text = channel === "telegram" ? r.telegram : r.x;
       if (!text) continue;
+      // The dev voice speaks at most once a day, whatever the channel: it is the least urgent thing we say.
+      if (event.kind === "dev_log" || event.kind === "dev_milestone") {
+        const mine = await db.query("SELECT 1 FROM announcements WHERE event_key = $1 AND channel = $2", [event.key, channel]);
+        const today = await db.query(
+          "SELECT 1 FROM announcements WHERE (event_key LIKE 'devlog:%' OR event_key LIKE 'devmile:%') AND status = 'sent' AND sent_at >= date_trunc('day', now() AT TIME ZONE 'utc')",
+        );
+        if (!mine.rows.length && today.rows.length) continue;
+      }
       const prev = (await db.query<{ status: string; attempts: number }>("SELECT status, attempts FROM announcements WHERE event_key = $1 AND channel = $2", [event.key, channel])).rows[0];
       // "capped" is not a verdict on the post, it is a verdict on the day: it may fit later, so it is
       // reconsidered on the next cycles (the collector drops it once it is no longer worth posting).

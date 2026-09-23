@@ -1,6 +1,7 @@
 import { forX, postTweet, type XCreds } from "./x.js";
 
-export type Channel = "telegram" | "x";
+// draft: the X text, sent to the Captain's private chat to be posted by hand (B4, the dev posts' first week).
+export type Channel = "telegram" | "x" | "draft";
 
 export interface Sender {
   /** false = the channel has no credentials: its posts are recorded as unconfigured, not attempted */
@@ -37,10 +38,14 @@ async function telegram(token: string, chatId: string, text: string): Promise<vo
 export function makeSender(mode: "test" | "live", env: { tgToken: string; tgChannel?: string; tgTestChat?: string; x?: XCreds | null }): Sender {
   return {
     has(channel) {
-      if (mode === "test") return !!env.tgTestChat;
+      if (mode === "test" || channel === "draft") return !!env.tgTestChat;
       return channel === "telegram" ? !!env.tgChannel : !!env.x;
     },
     async send(channel, text) {
+      if (channel === "draft") {
+        if (!env.tgTestChat) throw new Error("TELEGRAM_TEST_CHAT_ID not set");
+        return telegram(env.tgToken, env.tgTestChat, `✍️ DRAFT for X: nothing was posted. Post it by hand if you like it.\n\n${forX(text)}`);
+      }
       if (mode === "test") {
         if (!env.tgTestChat) throw new Error("TELEGRAM_TEST_CHAT_ID not set");
         return telegram(env.tgToken, env.tgTestChat, `[TEST · ${channel}]\n\n${text}`);

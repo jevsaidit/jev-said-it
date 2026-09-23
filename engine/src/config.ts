@@ -157,6 +157,15 @@ export interface AnnounceEnv {
   x: XCreds | null;
   site: string;
   xDailyCap: number;
+  /** B4 dev posts: draft (default) = to the private chat, to be posted by hand · x = on X, weakest kind · off.
+   *  excluded = EXCLUDE (the team): without it no milestone is counted, since "outside the team" would be false. */
+  dev: { mode: "off" | "draft" | "x"; excluded: string[] | null };
+}
+
+function devMode(): "off" | "draft" | "x" {
+  const m = process.env.DEV_POSTS || "draft";
+  if (m !== "off" && m !== "draft" && m !== "x") throw new Error(`DEV_POSTS must be off, draft or x: ${m}`);
+  return m;
 }
 
 /** Null when ANNOUNCE_MODE is off (the default): the engine stays silent. */
@@ -172,5 +181,6 @@ export function loadAnnounceEnv(): AnnounceEnv | null {
     x: xCredsFromEnv(process.env),
     site: process.env.PUBLIC_SITE_URL || "https://www.jevsaidit.com",
     xDailyCap: num("X_DAILY_CAP", 6),
+    dev: { mode: devMode(), excluded: process.env.EXCLUDE ? process.env.EXCLUDE.split(",").map((a) => a.trim().toLowerCase()).filter(Boolean) : null },
   };
 }

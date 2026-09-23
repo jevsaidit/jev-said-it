@@ -1,4 +1,6 @@
 import type { Db } from "../db/db.js";
+import type { Channel } from "./channels.js";
+import { collectDev } from "./dev.js";
 import type { AnnounceEvent, Q, Unpaid } from "./soul.js";
 
 type QRow = { id: string; epoch: number; deadline: string; tx_hash: string; token: string; symbol: string | null; json: string; outcome: string | null };
@@ -37,8 +39,12 @@ export function unpaidOf(reason: string | null, players: number): Unpaid {
   return "none_beat";
 }
 
-export async function collectEvents(db: Db, now: number): Promise<Array<{ event: AnnounceEvent; channels: Array<"telegram" | "x"> }>> {
-  const out: Array<{ event: AnnounceEvent; channels: Array<"telegram" | "x"> }> = [];
+export async function collectEvents(
+  db: Db,
+  now: number,
+  dev?: { mode: "off" | "draft" | "x"; excluded: string[] | null },
+): Promise<Array<{ event: AnnounceEvent; channels: Channel[] }>> {
+  const out: Array<{ event: AnnounceEvent; channels: Channel[] }> = [];
   const qs = (await db.query<QRow>("SELECT id, epoch, deadline, tx_hash, token, symbol, json, outcome FROM questions WHERE status = 'OPEN' AND deadline > $1 ORDER BY deadline, id", [now - RECENT_SEC])).rows;
   const batches = batchesFrom(qs);
   // One "epoch is open" per epoch on X, not one per batch: the engine opens a batch every couple of
@@ -83,6 +89,10 @@ export async function collectEvents(db: Db, now: number): Promise<Array<{ event:
   for (const s of swaps) {
     const d = JSON.parse(s.detail) as { ethIn?: string; burned?: string };
     if (d.ethIn && d.burned) out.push({ event: { kind: "swap", key: `swap:${s.tx_hash}`, ethIn: d.ethIn, burned: d.burned, tx: s.tx_hash }, channels: ["telegram", "x"] });
+  }
+  // B4: the dev voice, last and weakest. "draft" sends the X text to the Captain's private chat only.
+  if (dev && dev.mode !== "off") {
+    for (const event of await collectDev(db, now, dev.excluded)) out.push({ event, channels: [dev.mode === "x" ? "x" : "draft"] });
   }
   return out;
 }

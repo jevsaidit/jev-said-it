@@ -176,7 +176,7 @@ export async function serve(d: ServiceDeps): Promise<void> {
         if (seenAgo > 120) mark("announce", "WAITING", "engine not seeing the chain: silent");
         else
           await task("announce", async () => {
-            const r = await announce(d.db, makeSender(an.mode, an), { site: an.site, xDailyCap: an.xDailyCap, now: Math.floor(Date.now() / 1000) });
+            const r = await announce(d.db, makeSender(an.mode, an), { site: an.site, xDailyCap: an.xDailyCap, now: Math.floor(Date.now() / 1000), dev: an.dev });
             // A cap that does not say what it withheld hides its own cost: CAPPED is its own state.
             return { state: r.failed || r.refused ? "PARTIAL" : r.sent ? "OK" : r.capped ? "CAPPED" : "IDLE", detail: r };
           });
